@@ -12,3 +12,5 @@ pynput>=1.8.2
 pygetwindow>=0.0.9
 edge-tts>=7.2.8
 pygame>=2.6.1
+uiautomation>=2.0.29
+comtypes>=1.4.17

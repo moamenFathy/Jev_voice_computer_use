@@ -15,6 +15,7 @@
 
 - **⚡ Sub-second Latency:** Deterministic decision-making in **200ms to 500ms** via `Jev System One`.
 - **🗣️ Bilingual Speech Support:** Fluently understands both Arabic (Egyptian dialect & Modern Standard Arabic) and English.
+- **🎯 In-App Control via Accessibility Tree (UIA):** Inspects, reads, clicks, and types into native Windows controls (Buttons, Text boxes, Menus, Tabs, Checkboxes) across desktop apps (Notepad, Chrome, VS Code, Rider, Office) with 0-latency local scanning.
 - **🔍 Bilingual Phonetic App Resolver:** Solves cross-language phonetic pronunciation discrepancies (e.g., Arabic-transcribed English names like *"انتي جرافيتي"* ➡️ `Antigravity`, *"سبوتيفاي"* ➡️ `Spotify`, *"ديسكورد"* ➡️ `Discord`, *"رايدر"* ➡️ `JetBrains Rider`).
 - **🚀 Instant Native Launching:** Directly resolves and executes over **170+ installed desktop applications and system protocols** without triggering web search or edge redirects.
 - **💻 Dedicated IDE Support:** Out-of-the-box recognition and instant launching for developer IDEs including **JetBrains Rider**, **Visual Studio Community**, **VS Code**, **Cursor**, **Zed**, and **PyCharm**.
@@ -64,7 +65,8 @@ arabic_voice_computer_use/
     │
     ├── core/                 # OS automation & resolver engines
     │   ├── os_controller.py  # Mouse, keyboard, clipboard & failsafe control
-    │   └── app_resolver.py   # Phonetic matching & Windows app indexing
+    │   ├── app_resolver.py   # Phonetic matching & Windows app indexing
+    │   └── accessibility_scanner.py # UI Automation Tree & in-app control
     │
     ├── decision/             # AI Decision engine layer
     │   └── jev_engine.py     # TypeSafe AI Jev System One integration

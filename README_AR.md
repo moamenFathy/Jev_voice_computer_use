@@ -14,6 +14,7 @@
 
 - **⚡ اتخاذ قرار فوري (Sub-second Latency):** قرارات حتمية وسريعة جداً في أقل من **200 إلى 500 مللي ثانية** بفضل بنية `Jev System One`.
 - **🗣️ دعم ثنائي اللغة (Bilingual Speech Support):** يفهم الأوامر الصوتية باللغة العربية (بالمصري والفصحى) وباللغة الإنجليزية بطلاقة.
+- **🎯 التحكم داخل التطبيقات (In-App Control via Accessibility Tree):** قراءة والضغط على أزرار وقوائم وحقول البرامج النشطة (Notepad, Chrome, VS Code, Rider, Office) عبر واجهة Microsoft UI Automation بسرعة فائقة وبدون أي استهلاك للـ API.
 - **🔍 محرك المطابقة الصوتية المعرب (Bilingual Phonetic Resolver):** يحل مشكلة نطق أسماء البرامج الإنجليزية بالحروف العربية (مثل *"انتي جرافيتي"*، *"سبوتيفاي"*، *"ديسكورد"*، *"رايدر"*) ويطابقها مع ملفاتها الأصلية مباشرة.
 - **🚀 تشغيل البرامج الفوري (Direct Native Protocols):** دعم فتح أكثر من **170 تطبيق** مثبت على جهازك فوراً بدون البحث في المتصفح أو في شريط ويندوز.
 - **💻 دعم مخصص لبيئات التطوير (IDEs):** تعرف فوري على بيئات التطوير مثل JetBrains Rider, Visual Studio Community, VS Code, Cursor, Zed, PyCharm.
@@ -63,7 +64,8 @@ arabic_voice_computer_use/
     │
     ├── core/                 # محركات نظام التشغيل
     │   ├── os_controller.py  # التحكم بالماوس والكيبورد و Failsafe
-    │   └── app_resolver.py   # الفهرسة الصوتية للبرامج و IDEs
+    │   ├── app_resolver.py   # الفهرسة الصوتية للبرامج و IDEs
+    │   └── accessibility_scanner.py # فحص عناصر البرامج عبر Accessibility Tree
     │
     ├── decision/             # محرك اتخاذ القرار
     │   └── jev_engine.py     # الربط مع Jev System One

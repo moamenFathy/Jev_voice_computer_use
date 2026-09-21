@@ -6,31 +6,32 @@ from typesafe_sdk import TypeSafeClient, Choice, Score, Noul
 from src.config import TYPESAFE_API_KEY, MAX_STEPS_PER_COMMAND, STEP_PAUSE_SECONDS, TEMP_DIR
 from src.core.os_controller import OSController
 from src.core.app_resolver import WindowsAppResolver
+from src.core.accessibility_scanner import accessibility_scanner, UIElement
 
 class JevDecisionEngine:
     def __init__(self, os_controller: OSController):
         self.controller = os_controller
         self.app_resolver = WindowsAppResolver()
+        self.scanner = accessibility_scanner
         self.api_key = TYPESAFE_API_KEY
         self.client = TypeSafeClient(api_key=self.api_key)
 
     def _get_active_window_info(self) -> str:
         try:
-            import pygetwindow as gw
-            active = gw.getActiveWindow()
-            if active and active.title:
-                return active.title
+            active = self.scanner.get_active_window()
+            if active and active.Name:
+                return active.Name
         except Exception:
             pass
-        return "Unknown Window"
+        return "Desktop"
 
     def _extract_search_or_text(self, text: str) -> str:
         cleaned = re.sub(
-            r'^(افتح|شغل|ابحث عن|ابحث في|دور على|اكتب|قوله|احسب|open|launch|search for|search|type|write|calculate|play)\s+',
+            r'^(افتح|شغل|ابحث عن|ابحث في|دور على|اكتب|قوله|احسب|اضغط على|انقر على|دوس على|open|launch|search for|search|type|write|calculate|play|click|press)\s+',
             '', text.strip(), flags=re.IGNORECASE
         )
         cleaned = re.sub(
-            r'^(المتصفح|جوجل|كروم|المفكرة|الآلة الحاسبة|اليوتيوب|browser|chrome|notepad|calculator|calc|youtube|google)\s+(and\s+)?(و)?(ابحث عن|واكتب|واحسب|type|write|search for|search)?\s*',
+            r'^(المتصفح|جوجل|كروم|المفكرة|الآلة الحاسبة|اليوتيوب|زر|زرار|خانة|حقل|browser|chrome|notepad|calculator|calc|youtube|google|button)\s+(and\s+)?(و)?(ابحث عن|واكتب|واحسب|type|write|search for|search)?\s*',
             '', cleaned, flags=re.IGNORECASE
         )
         return cleaned.strip()
@@ -47,15 +48,53 @@ class JevDecisionEngine:
 
         if on_step_callback:
             on_step_callback("status", f"🎯 الهدف: {goal_arabic}")
+
+        # -------------------------------------------------------------
+        # 1. فحص الشجرة البرمجية للنافذة النشطة (UI Automation Tree)
+        # -------------------------------------------------------------
+        window_title, ui_elements = self.scanner.scan_active_window(max_elements=40)
+        
+        # -------------------------------------------------------------
+        # 2. المسار السريع المحلي (Fast-Path Local Matching)
+        # -------------------------------------------------------------
+        lower_goal = goal_arabic.lower().strip()
+        is_explicit_ui_click = any(w in lower_goal for w in [
+            "اضغط", "انقر", "دوس", "زر", "زرار", "قائمة", "تبويب", "تاب", "click", "press", "tab", "menu"
+        ])
+
+        if ui_elements and (is_explicit_ui_click or any(syn in lower_goal for syn in ["حفظ", "سيف", "جديد", "ملف", "اغلاق", "close", "save", "file"])):
+            match_res = self.scanner.find_best_match(goal_arabic, ui_elements)
+            if match_res and match_res[1] >= 0.65:
+                target_elem, confidence = match_res
+                if on_step_callback:
+                    on_step_callback("thought", f"⚡ مطابقة محلية فورية: [{target_elem.control_type}] '{target_elem.name}' (ثقة: {int(confidence*100)}%)")
+                    on_step_callback("action", f"🖱️ النقر على: '{target_elem.name}' داخل '{window_title}'...")
+
+                success = self.scanner.click_element(target_elem)
+                if success:
+                    final_msg = f"تم الضغط على '{target_elem.name}' بنجاح."
+                    if on_step_callback:
+                        on_step_callback("finished", final_msg)
+                    return final_msg
+
+        # -------------------------------------------------------------
+        # 3. اتخاذ القرار عبر نموذج Jev (System One)
+        # -------------------------------------------------------------
+        if on_step_callback:
             on_step_callback("thinking", "🧠 استدعاء Jev Decision Model (TypeSafe AI)...")
 
-        active_window = self._get_active_window_info()
         start_time = time.time()
+
+        # إعداد ملخص مضغوط لعناصر الشاشة ليمتلك Jev سياق التطبيق المفتوح
+        compact_ui_summary = ""
+        if ui_elements:
+            top_controls = [f"{e.id}:{e.control_type} '{e.name}'" for e in ui_elements[:15] if e.name]
+            compact_ui_summary = " | Controls: " + ", ".join(top_controls)
 
         try:
             state_context = (
                 f"User Goal: '{goal_arabic}'\n"
-                f"Active Windows Title: '{active_window}'\n"
+                f"Active Window: '{window_title}'{compact_ui_summary}\n"
                 f"System Environment: Windows 11 Desktop"
             )
 
@@ -66,8 +105,9 @@ class JevDecisionEngine:
                         instructions="What is the primary computer action requested by the user?",
                         criteria={
                             "launch_app": "Launch a desktop application or IDE",
+                            "click_ui_element": "Click a specific button, menu item, tab, or checkbox inside the active window",
                             "web_search": "Search the web on Google/YouTube for a query",
-                            "type_text": "Type Arabic or English text into the active document",
+                            "type_text": "Type Arabic or English text into the active document or input field",
                             "math_calculate": "Calculate a math expression or type numbers into calculator",
                             "keyboard_shortcut": "Execute shortcut like copy, paste, select all, close window, minimize",
                             "volume_control": "Increase, decrease, or mute system audio volume",
@@ -93,7 +133,7 @@ class JevDecisionEngine:
                             "discord": "Discord",
                             "telegram": "Telegram",
                             "whatsapp": "WhatsApp",
-                            "none": "Other app or none"
+                            "none": "Other app or current active app"
                         }
                     ),
                     "shortcut_type": Choice(
@@ -139,8 +179,21 @@ class JevDecisionEngine:
 
         final_message = "تم تنفيذ طلبك بنجاح."
 
-        # تنفيذ الأفعال
-        if action == "launch_app":
+        # -------------------------------------------------------------
+        # 4. تنفيذ الأفعال
+        # -------------------------------------------------------------
+        if action == "click_ui_element":
+            match_res = self.scanner.find_best_match(goal_arabic, ui_elements)
+            if match_res:
+                target_elem, conf = match_res
+                if on_step_callback:
+                    on_step_callback("action", f"🖱️ النقر على عنصر: [{target_elem.control_type}] '{target_elem.name}'...")
+                self.scanner.click_element(target_elem)
+                final_message = f"تم الضغط على '{target_elem.name}'."
+            else:
+                final_message = "لم أجد العنصر المطلوب داخل النافذة الحالية."
+
+        elif action == "launch_app":
             app_query = target_app if target_app != "none" else goal_arabic
             if on_step_callback:
                 on_step_callback("action", f"⚡ تشغيل التطبيق: '{app_query}'...")
@@ -193,7 +246,13 @@ class JevDecisionEngine:
             text_to_type = self._extract_search_or_text(goal_arabic)
             if on_step_callback:
                 on_step_callback("action", f"✍️ كتابة: '{text_to_type}'...")
-            self.controller.type_arabic(text_to_type)
+            
+            # محاولة الكتابة في العنصر النشط أو محرر النصوص إذا وجد
+            editor_elem = next((e for e in ui_elements if e.control_type in ("Edit", "Document")), None)
+            if editor_elem:
+                self.scanner.type_into_element(editor_elem, text_to_type)
+            else:
+                self.controller.type_arabic(text_to_type)
             final_message = f"تمت كتابة: {text_to_type}"
 
         elif action == "keyboard_shortcut":
@@ -212,10 +271,14 @@ class JevDecisionEngine:
             elif shortcut == "select_all":
                 self.controller.hotkey(["ctrl", "a"])
                 final_message = "تم تحديد الكل."
+            elif shortcut == "save":
+                self.controller.hotkey(["ctrl", "s"])
+                final_message = "تم الحفظ (Ctrl + S)."
             elif shortcut == "enter":
                 self.controller.press_key("enter")
                 final_message = "تم الضغط على زر Enter."
             else:
+                self.controller.press_key(shortcut)
                 final_message = "تم تنفيذ الاختصار."
 
         elif action == "volume_control":
