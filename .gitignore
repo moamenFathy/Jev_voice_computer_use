@@ -18,6 +18,8 @@ logs/
 temp/
 *.tmp
 history.log
+@AutomationLog.txt
+*AutomationLog*
 
 # Python Cache & Bytecode
 __pycache__/
