@@ -1,96 +1,98 @@
-# ⚡ Jev Voice OS Agent (المساعد الصوتي الذكي للتحكم بالكمبيوتر)
+# ⚡ Jev Voice OS Agent
+
+[📖 Read the Arabic Documentation (اقرأ النسخة العربية)](README_AR.md)
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![Decision Model](https://img.shields.io/badge/Decision%20Model-Jev%20(TypeSafe%20AI)-00f0ff.svg)](https://typesafe.ai)
 [![OS Support](https://img.shields.io/badge/OS-Windows%2010%20%2F%2011-0078D6.svg)](https://microsoft.com)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Language](https://img.shields.io/badge/Languages-Arabic%20%7C%20English-orange.svg)](#supported-commands)
 
-> 🎙️ **مساعد صوتي ذكي فائق السرعة للتحكم بنظام ويندوز باللغة العربية (اللهجة المصرية والفصحى) والإنجليزية، يعتمد كلياً على نموذج اتخاذ القرار الفوري `Jev (TypeSafe AI System One)` بدون أي اعتماد على LLMs البطيئة أو خدمات خارجية ثقيلة.**
-
----
-
-## 🌟 الميزات الرئيسية (Key Features)
-
-- **⚡ اتخاذ قرار فوري (Sub-second Latency):** قرارات حتمية وسريعة جداً في أقل من **200 إلى 500 مللي ثانية** بفضل بنية `Jev System One`.
-- **🗣️ دعم ثنائي اللغة (Bilingual Speech Support):** يفهم الأوامر الصوتية باللغة العربية (بالمصري والفصحى) وباللغة الإنجليزية بطلاقة.
-- **🔍 محرك المطابقة الصوتية المعرب (Bilingual Phonetic Resolver):** يحل مشكلة نطق أسماء البرامج الإنجليزية بالحروف العربية (مثل *"انتي جرافيتي"*، *"سبوتيفاي"*، *"ديسكورد"*، *"رايدر"*) ويطابقها مع ملفاتها الأصلية مباشرة.
-- **🚀 تشغيل البرامج الفوري (Direct Native Protocols):** دعم فتح أكثر من **170 تطبيق** مثبت على جهازك فوراً بدون البحث في المتصفح أو في شريط ويندوز.
-- **💻 دعم مخصص لبيئات التطوير (IDEs):** تعرف فوري على بيئات التطوير مثل JetBrains Rider, Visual Studio Community, VS Code, Cursor, Zed, PyCharm.
-- **🏝️ واجهة عائمة أنيقة (Dynamic Island UI):** شريط تفاعلي زجاجي مستوحى من Dynamic Island مع موجات صوتية حية (Live Waveform Visualizer).
-- **🛑 حماية وأمان (Failsafe & Emergency Stop):** إيقاف طوارئ فوري بضغطة زر `ESC` أو بتحريك الماوس لأي زاوية من زوايا الشاشة.
-- **🔊 رد صوتي طبيعي (Natural Arabic TTS):** ردود صوتية باللغة العربية عبر محرك `Edge-TTS`.
+> 🎙️ **An ultra-fast, bilingual (Arabic & English) voice-controlled desktop assistant for Windows. Powered entirely by the deterministic `Jev System One` decision model from TypeSafe AI, delivering sub-second intent resolution without relying on slow or expensive generative LLMs.**
 
 ---
 
-## 🏗️ المعمارية البرمجية (System Architecture)
+## 🌟 Key Features
+
+- **⚡ Sub-second Latency:** Deterministic decision-making in **200ms to 500ms** via `Jev System One`.
+- **🗣️ Bilingual Speech Support:** Fluently understands both Arabic (Egyptian dialect & Modern Standard Arabic) and English.
+- **🔍 Bilingual Phonetic App Resolver:** Solves cross-language phonetic pronunciation discrepancies (e.g., Arabic-transcribed English names like *"انتي جرافيتي"* ➡️ `Antigravity`, *"سبوتيفاي"* ➡️ `Spotify`, *"ديسكورد"* ➡️ `Discord`, *"رايدر"* ➡️ `JetBrains Rider`).
+- **🚀 Instant Native Launching:** Directly resolves and executes over **170+ installed desktop applications and system protocols** without triggering web search or edge redirects.
+- **💻 Dedicated IDE Support:** Out-of-the-box recognition and instant launching for developer IDEs including **JetBrains Rider**, **Visual Studio Community**, **VS Code**, **Cursor**, **Zed**, and **PyCharm**.
+- **🏝️ Glassmorphic Dynamic Island UI:** Floating, draggable top-bar widget with real-time pulsing audio waveform visualizer and streaming speech detection.
+- **🛑 Failsafe & Emergency Stop:** Emergency abort via the `ESC` key or moving the mouse pointer to any screen corner.
+- **🔊 Natural Voice Feedback:** Seamless bilingual spoken responses powered by `Edge-TTS`.
+
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
-    User([المستخدم يتحدث بالعربي أو الإنجليزي]) --> Voice[Voice Engine - محرك الاستماع الصوتي]
-    Voice --> Text[النص المستخرج]
+    User([User Voice Command in Arabic or English]) --> Voice[Voice Engine - Streaming Speech Recognition]
+    Voice --> Text[Transcribed Intent]
     Text --> Jev[⚡ Jev Decision Engine<br/>TypeSafe AI System One]
     
-    Jev -- "Launch App" --> Resolver[Windows Native App Resolver<br/>فهرسة 170+ تطبيق وبروتوكولات مباشرة]
-    Jev -- "Web Search" --> Browser[المتصفح - بحث Google / YouTube]
-    Jev -- "Type Text / Multi-step" --> Clipboard[OS Controller - كتابة النصوص بالعربي عبر Clipboard]
-    Jev -- "Shortcut / System" --> OS[Win32 API - اختصارات والتحكم بالصوت]
+    Jev -- "Launch App" --> Resolver[Windows Native App Resolver<br/>170+ Indexed Apps & Direct Protocols]
+    Jev -- "Web Search" --> Browser[Web Browser - Google / YouTube Search]
+    Jev -- "Type Text / Multi-step" --> Clipboard[OS Controller - Safe Unicode Clipboard Typing]
+    Jev -- "Shortcut / System" --> OS[Win32 API - Key Shortcuts & Volume Control]
     
-    Resolver --> Desktop([تنفيذ الأمر فوراً على سطح المكتب 🚀])
+    Resolver --> Desktop([Instant Desktop Execution 🚀])
     Browser --> Desktop
     Clipboard --> Desktop
     OS --> Desktop
-    Desktop --> TTS[رد صوتي عربي: تم التنفيذ]
+    Desktop --> TTS[Spoken Voice Feedback: Complete]
 ```
 
 ---
 
-## 📂 هيكل المشروع (Project Structure)
+## 📂 Project Structure
 
 ```bash
 arabic_voice_computer_use/
-├── .env.example              # نموذج ملف المتغيرات
-├── .gitignore                # استبعاد ملفات الـ venv والـ logs والملفات المؤقتة
-├── README.md                 # التوثيق الشامل للمشروع
-├── requirements.txt          # قائمة المكتبات المطلوبة
-├── run.bat                   # ملف التشغيل السريع المباشر لويندوز
-├── main.py                   # نقطة التشغيل الرئيسية للتطبيق
+├── .env.example              # Environment variables template (no secrets)
+├── .gitignore                # Excludes venv, logs, temp files, and media
+├── README.md                 # Primary English documentation
+├── README_AR.md              # Complete Arabic documentation
+├── requirements.txt          # Python dependencies
+├── run.bat                   # 1-click Windows startup script
+├── main.py                   # Main application entry point
 │
-└── src/                      # الحزمة البرمجية الأساسية المنظمة
+└── src/                      # Modular source package
     ├── __init__.py
-    ├── config.py             # إعدادات النظام وقراءة المتغيرات
+    ├── config.py             # System settings & configuration loader
     │
-    ├── core/                 # محركات نظام التشغيل
-    │   ├── os_controller.py  # التحكم بالماوس والكيبورد و Failsafe
-    │   └── app_resolver.py   # الفهرسة الصوتية للبرامج و IDEs
+    ├── core/                 # OS automation & resolver engines
+    │   ├── os_controller.py  # Mouse, keyboard, clipboard & failsafe control
+    │   └── app_resolver.py   # Phonetic matching & Windows app indexing
     │
-    ├── decision/             # محرك اتخاذ القرار
-    │   └── jev_engine.py     # الربط مع Jev System One
+    ├── decision/             # AI Decision engine layer
+    │   └── jev_engine.py     # TypeSafe AI Jev System One integration
     │
-    ├── voice/                # محرك الصوت
-    │   └── voice_engine.py   # الاستماع التدفقي والرد الصوتي
+    ├── voice/                # Audio & Speech layer
+    │   └── voice_engine.py   # Streaming STT & Edge-TTS voice engine
     │
-    └── ui/                   # واجهة المستخدم
-        └── dynamic_island.py # الـ Dynamic Island التفاعلية
+    └── ui/                   # User interface layer
+        └── dynamic_island.py # Glassmorphic Dynamic Island floating widget
 ```
-
 
 ---
 
-## 🚀 التثبيت والتشغيل (Quick Start)
+## 🚀 Quick Start
 
-### 1. المتطلبات الأساسية
-- نظام تشغيل: **Windows 10 / 11**
-- إصدار بايثون: **Python 3.11 أو أعلى**
-- ميكروفون متصل ويعمل
+### 1. Prerequisites
+- Operating System: **Windows 10 / 11**
+- Python: **Python 3.11 or higher**
+- Working microphone
 
-### 2. استنساخ المشروع (Clone Repository)
+### 2. Clone Repository
 ```bash
 git clone https://github.com/your-username/jev-arabic-voice-computer-use.git
 cd jev-arabic-voice-computer-use
 ```
 
-### 3. إعداد البيئة ومتغيرات الـ API
-قم بإنشاء ملف `.env` ووضع مفتاح API الخاص بك من [TypeSafe AI](https://typesafe.ai):
+### 3. Configure API Credentials
+Create a `.env` file in the root directory and add your [TypeSafe AI](https://typesafe.ai) API key:
 ```env
 TYPESAFE_API_KEY=your_typesafe_api_key_here
 DECISION_MODEL=jev-latest
@@ -99,55 +101,43 @@ TTS_ENABLED=true
 FAILSAFE_ENABLED=true
 ```
 
-### 4. التشغيل
-**الخيار أ (بضغطة واحدة):**
-- اضغط مرتين على ملف **`run.bat`** (يقوم بإنشاء البيئة وتثبيت الحزم وتشغيل الواجهة تلقائياً).
+### 4. Run the Application
+**Option A (1-Click Launch):**
+- Double-click **`run.bat`** (automatically sets up virtual environment, installs dependencies, and launches the UI).
 
-**الخيار ب (عبر الكونسول):**
+**Option B (Manual Terminal Launch):**
 ```bash
-# إنشاء وتفعيل البيئة الافتراضية
+# Create and activate virtual environment
 python -m venv venv
 .\venv\Scripts\activate
 
-# تثبيت المكتبات
+# Install dependencies
 pip install -r requirements.txt
 
-# تشغيل البرنامج
+# Launch application
 python main.py
 ```
 
 ---
 
-## 🗣️ أمثلة للأوامر المدعومة (Supported Commands)
+## 🗣️ Supported Commands
 
-| الأمر بالعربي | English Command | الإجراء المنفذ |
+| Arabic Command | English Command | Executed Action |
 | :--- | :--- | :--- |
-| *"افتح انتي جرافيتي"* | *"Open Antigravity"* | تشغيل تطبيق Google Antigravity فوراً |
-| *"افتح رايدر"* / *"جيت برينز رايدر"* | *"Open Rider"* | تشغيل JetBrains Rider 2026 |
-| *"افتح فيجوال ستوديو كوميونيتي"* | *"Open Visual Studio"* | تشغيل Visual Studio Community |
-| *"افتح سبوتيفاي"* | *"Open Spotify"* | تشغيل تطبيق Spotify عبر بروتوكول النظام المباشر |
-| *"افتح كلود"* | *"Open Claude"* | تشغيل تطبيق Claude Desktop |
-| *"افتح المفكرة واكتبلي تقرير اليوم"* | *"Open notepad and write daily report"* | فتح Notepad وكتابة النص العربي مباشرة |
-| *"افتح اليوتيوب وشغل سورة الرحمن"* | *"Open YouTube and play Quran"* | فتح اليوتيوب والبحث المباشر عن التلاوة |
-| *"افتح المتصفح وابحث عن أخبار الذكاء الاصطناعي"* | *"Search Google for AI news"* | فتح Google Chrome والبحث الفوري |
-| *"علي الصوت"* / *"وطي الصوت"* | *"Turn up volume"* / *"Mute"* | التحكم الفوري في مستوى صوت الويندوز |
-| *"اقفل النافذة"* / *"أظهر سطح المكتب"* | *"Close window"* / *"Minimize all"* | تنفيذ اختصارات لوحة المفاتيح |
+| *"افتح انتي جرافيتي"* | *"Open Antigravity"* | Launches Google Antigravity |
+| *"افتح رايدر"* / *"جيت برينز رايدر"* | *"Open Rider"* / *"Open JetBrains Rider"* | Directly launches JetBrains Rider 2026 |
+| *"افتح فيجوال ستوديو كوميونيتي"* | *"Open Visual Studio"* | Directly launches Visual Studio Community |
+| *"افتح سبوتيفاي"* | *"Open Spotify"* | Launches Spotify via native system protocol |
+| *"افتح كلود"* | *"Open Claude"* | Launches Claude Desktop |
+| *"افتح المفكرة واكتبلي تقرير اليوم"* | *"Open notepad and write daily report"* | Opens Notepad and pastes Arabic/English text |
+| *"افتح اليوتيوب وشغل سورة الرحمن"* | *"Open YouTube and play Quran"* | Opens YouTube and searches query |
+| *"افتح المتصفح وابحث عن أخبار الذكاء الاصطناعي"* | *"Search Google for AI news"* | Opens Chrome and searches Google |
+| *"علي الصوت"* / *"وطي الصوت"* | *"Turn up volume"* / *"Mute"* | Controls system master volume directly |
+| *"اقفل النافذة"* / *"أظهر سطح المكتب"* | *"Close window"* / *"Minimize all"* | Triggers OS shortcuts (`Alt+F4`, `Win+D`) |
 
 ---
 
-## 🛡️ الأمان والتحكم (Safety)
+## 🛡️ Safety & Controls
 
-- **زر الطوارئ السريع:** اضغط على زر `ESC` لإلغاء أي حركة للماوس أو الكيبورد فوراً.
-- **خاصية PyAutoGUI Fail-safe:** بمجرد تحريك الماوس إلى أي زاوية من زوايا الشاشة، يتوقف النظام أوتوماتيكياً.
-
----
-
-## 🤝 المساهمة (Contributing)
-
-المساهمات مرحب بها دائماً! لا تتردد في فتح **Pull Request** أو إنشاء **Issue** لإضافة برامج جديدة إلى القاموس الصوتي أو تحسين الواجهة.
-
----
-
-## 📄 الترخيص (License)
-
-هذا المشروع مرخص تحت رخصة **MIT License**.
+- **Emergency Stop Button:** Press the `ESC` key anytime to instantly abort mouse movement and key presses.
+- **PyAutoGUI Fail-safe:** Moving the mouse cursor into any screen corner automatically halts all active operations.
