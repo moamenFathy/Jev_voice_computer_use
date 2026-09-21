@@ -83,7 +83,8 @@ class OSController:
             "esc": "escape", "escape": "escape", "backspace": "backspace",
             "tab": "tab", "space": "space", "up": "up", "down": "down",
             "left": "left", "right": "right", "delete": "delete",
-            "volumeup": "volumeup", "volumedown": "volumedown", "volumemute": "volumemute"
+            "volumeup": "volumeup", "volumedown": "volumedown", "volumemute": "volumemute",
+            "playpause": "playpause", "nexttrack": "nexttrack", "prevtrack": "prevtrack"
         }
         actual_key = key_map.get(key_name.lower(), key_name.lower())
         pyautogui.press(actual_key)

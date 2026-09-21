@@ -1,6 +1,9 @@
-"""
-End-to-end test for Jev Decision Engine + Accessibility Tree In-App Control.
-"""
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import time
 import subprocess

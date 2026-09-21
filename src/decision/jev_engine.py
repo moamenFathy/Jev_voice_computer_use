@@ -7,12 +7,14 @@ from src.config import TYPESAFE_API_KEY, MAX_STEPS_PER_COMMAND, STEP_PAUSE_SECON
 from src.core.os_controller import OSController
 from src.core.app_resolver import WindowsAppResolver
 from src.core.accessibility_scanner import accessibility_scanner, UIElement
+from src.core.spotify_controller import spotify_controller
 
 class JevDecisionEngine:
     def __init__(self, os_controller: OSController):
         self.controller = os_controller
         self.app_resolver = WindowsAppResolver()
         self.scanner = accessibility_scanner
+        self.spotify = spotify_controller
         self.api_key = TYPESAFE_API_KEY
         self.client = TypeSafeClient(api_key=self.api_key)
 
@@ -25,13 +27,28 @@ class JevDecisionEngine:
             pass
         return "Desktop"
 
+    def _extract_spotify_query(self, text: str) -> str:
+        cleaned = re.sub(
+            r'^(شغل|افتح|ابحث عن|دور على|هاتلي|play|search for|open)\s+',
+            '', text.strip(), flags=re.IGNORECASE
+        )
+        cleaned = re.sub(
+            r'(على\s+سبوتيفاي|في\s+سبوتيفاي|سبوتيفاي|on\s+spotify|in\s+spotify|spotify)\s*',
+            '', cleaned, flags=re.IGNORECASE
+        )
+        cleaned = re.sub(
+            r'^(اغنية|أغنية|تراك|مغني|الفنان|موسيقى|song|track|artist)\s+',
+            '', cleaned.strip(), flags=re.IGNORECASE
+        )
+        return cleaned.strip()
+
     def _extract_search_or_text(self, text: str) -> str:
         cleaned = re.sub(
             r'^(افتح|شغل|ابحث عن|ابحث في|دور على|اكتب|قوله|احسب|اضغط على|انقر على|دوس على|open|launch|search for|search|type|write|calculate|play|click|press)\s+',
             '', text.strip(), flags=re.IGNORECASE
         )
         cleaned = re.sub(
-            r'^(المتصفح|جوجل|كروم|المفكرة|الآلة الحاسبة|اليوتيوب|زر|زرار|خانة|حقل|browser|chrome|notepad|calculator|calc|youtube|google|button)\s+(and\s+)?(و)?(ابحث عن|واكتب|واحسب|type|write|search for|search)?\s*',
+            r'^(المتصفح|جوجل|كروم|المفكرة|الآلة الحاسبة|اليوتيوب|سبوتيفاي|زر|زرار|خانة|حقل|browser|chrome|notepad|calculator|calc|youtube|google|spotify|button)\s+(and\s+)?(و)?(ابحث عن|واكتب|واحسب|تشغيل|play|type|write|search for|search)?\s*',
             '', cleaned, flags=re.IGNORECASE
         )
         return cleaned.strip()
@@ -49,15 +66,53 @@ class JevDecisionEngine:
         if on_step_callback:
             on_step_callback("status", f"🎯 الهدف: {goal_arabic}")
 
+        lower_goal = goal_arabic.lower().strip()
+
         # -------------------------------------------------------------
-        # 1. فحص الشجرة البرمجية للنافذة النشطة (UI Automation Tree)
+        # 1. فحص أوامر الميديا و Spotify السريعة (Fast-Path Media & Spotify)
+        # -------------------------------------------------------------
+        if any(w in lower_goal for w in ["سبوتيفاي", "سبوتفاي", "spotify"]):
+            spotify_query = self._extract_spotify_query(goal_arabic)
+            if spotify_query and len(spotify_query) > 1:
+                auto_play = any(w in lower_goal for w in ["شغل", "هاتلي", "اسمع", "play"])
+                if on_step_callback:
+                    on_step_callback("thought", f"⚡ مسار سبوتيفاي المباشر: البحث عن '{spotify_query}'")
+                    on_step_callback("action", f"🎵 فتح سبوتيفاي وتشغيل '{spotify_query}'...")
+                success, msg = self.spotify.search_and_play(spotify_query, auto_play=auto_play)
+                if on_step_callback:
+                    on_step_callback("finished", msg)
+                return msg
+
+        # أوامر التحكم في تشغيل الموسيقى
+        if any(w in lower_goal for w in ["وقف الاغنية", "وقف الموسيقى", "وقف التراك", "pause music", "pause song"]):
+            msg = self.spotify.play_pause()
+            if on_step_callback:
+                on_step_callback("finished", msg)
+            return msg
+
+        if any(w in lower_goal for w in ["كمل الاغنية", "شغل الاغنية", "شغل الموسيقى", "resume music", "play music"]):
+            msg = self.spotify.play_pause()
+            if on_step_callback:
+                on_step_callback("finished", msg)
+            return msg
+
+        if any(w in lower_goal for w in ["الاغنية اللي بعدها", "التراك اللي بعده", "التالي", "next song", "next track"]):
+            msg = self.spotify.next_track()
+            if on_step_callback:
+                on_step_callback("finished", msg)
+            return msg
+
+        if any(w in lower_goal for w in ["الاغنية اللي قبلها", "التراك اللي قبله", "السابق", "previous song", "prev track"]):
+            msg = self.spotify.previous_track()
+            if on_step_callback:
+                on_step_callback("finished", msg)
+            return msg
+
+        # -------------------------------------------------------------
+        # 2. فحص الشجرة البرمجية للنافذة النشطة (UI Automation Tree)
         # -------------------------------------------------------------
         window_title, ui_elements = self.scanner.scan_active_window(max_elements=40)
         
-        # -------------------------------------------------------------
-        # 2. المسار السريع المحلي (Fast-Path Local Matching)
-        # -------------------------------------------------------------
-        lower_goal = goal_arabic.lower().strip()
         is_explicit_ui_click = any(w in lower_goal for w in [
             "اضغط", "انقر", "دوس", "زر", "زرار", "قائمة", "تبويب", "تاب", "click", "press", "tab", "menu"
         ])
