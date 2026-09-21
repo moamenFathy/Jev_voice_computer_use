@@ -48,18 +48,31 @@ flowchart TD
 
 ```bash
 arabic_voice_computer_use/
-├── main.py              # نقطة التشغيل الرئيسية للتطبيق
-├── app_ui.py            # واجهة المستخدم العائمة (Dynamic Island UI)
-├── agent.py             # مخ اتخاذ القرار عبر Jev Decision Model
-├── app_resolver.py      # محرك تشغيل البرامج وحل الأسماء المعربة والصوتية
-├── voice_engine.py      # محرك التعرف على الصوت والرد الصوتي العربي
-├── os_controller.py     # وحدة التحكم بالماوس والكيبورد والنظام
-├── config.py            # ملف إعدادات النظام وقراءة المتغيرات
-├── requirements.txt     # قائمة المكتبات المطلوبة
-├── run.bat              # ملف التشغيل السريع المباشر لويندوز
-├── .env.example         # نموذج ملف المتغيرات
-└── .gitignore           # ملف استبعاد الملفات الحساسة
+├── .env.example              # نموذج ملف المتغيرات
+├── .gitignore                # استبعاد ملفات الـ venv والـ logs والملفات المؤقتة
+├── README.md                 # التوثيق الشامل للمشروع
+├── requirements.txt          # قائمة المكتبات المطلوبة
+├── run.bat                   # ملف التشغيل السريع المباشر لويندوز
+├── main.py                   # نقطة التشغيل الرئيسية للتطبيق
+│
+└── src/                      # الحزمة البرمجية الأساسية المنظمة
+    ├── __init__.py
+    ├── config.py             # إعدادات النظام وقراءة المتغيرات
+    │
+    ├── core/                 # محركات نظام التشغيل
+    │   ├── os_controller.py  # التحكم بالماوس والكيبورد و Failsafe
+    │   └── app_resolver.py   # الفهرسة الصوتية للبرامج و IDEs
+    │
+    ├── decision/             # محرك اتخاذ القرار
+    │   └── jev_engine.py     # الربط مع Jev System One
+    │
+    ├── voice/                # محرك الصوت
+    │   └── voice_engine.py   # الاستماع التدفقي والرد الصوتي
+    │
+    └── ui/                   # واجهة المستخدم
+        └── dynamic_island.py # الـ Dynamic Island التفاعلية
 ```
+
 
 ---
 
