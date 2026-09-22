@@ -45,8 +45,8 @@ class WebNavigationTool(BaseTool):
                         data={"url": url, "target": target, "auto_navigated": True},
                         execution_success=True,
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DEBUG] Notice on autonomous search result navigation: {e}")
 
         return ToolResult(
             success=True,

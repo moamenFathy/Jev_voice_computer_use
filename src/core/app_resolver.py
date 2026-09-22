@@ -231,8 +231,8 @@ class WindowsAppResolver:
             try:
                 subprocess.Popen(f'start "" "{cmd}"', shell=True)
                 return True, f"Launched {q} instantly."
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DEBUG] Error launching protocol '{cmd}': {e}")
 
         # 3. Check indexed apps in Windows and Program Files
         for name, path in self.apps.items():
@@ -240,8 +240,8 @@ class WindowsAppResolver:
                 try:
                     os.startfile(path)
                     return True, f"Opened {name} successfully."
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[DEBUG] Error starting file '{path}': {e}")
 
         # 4. Phonetic Latin matching
         phonetic_latin = self._arabic_to_latin_phonetic(q)
@@ -250,8 +250,8 @@ class WindowsAppResolver:
                 try:
                     os.startfile(path)
                     return True, f"Opened {name}."
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[DEBUG] Error starting phonetic match '{path}': {e}")
 
         # 5. Fuzzy Matching
         matches = difflib.get_close_matches(target_name, self.apps.keys(), n=1, cutoff=0.35)
@@ -263,15 +263,15 @@ class WindowsAppResolver:
             try:
                 os.startfile(self.apps[best_match])
                 return True, f"Opened {best_match}."
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DEBUG] Error starting fuzzy match '{self.apps[best_match]}': {e}")
 
         # 6. ASCII command fallback
         if target_name.isascii() and not any(ord(c) > 127 for c in target_name):
             try:
                 subprocess.Popen(f'start "" "{target_name}"', shell=True)
                 return True, f"Executed command '{target_name}'."
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DEBUG] Error executing ASCII command '{target_name}': {e}")
 
         return False, f"Could not find application '{query}'."
