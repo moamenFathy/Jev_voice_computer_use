@@ -24,7 +24,7 @@ class DynamicIslandUI:
         self.root.overrideredirect(True)
         self.root.attributes("-alpha", 0.95)
 
-        # تهيئة المحركات
+        # Engine Initializations
         self.controller = OSController()
         self.voice = VoiceEngine()
         self.agent = JevDecisionEngine(self.controller)
@@ -34,7 +34,7 @@ class DynamicIslandUI:
         self.wave_phase = 0
         self.current_state = "idle"
 
-        # تحريك بالسحب
+        # Drag & Move bindings
         self.root.bind("<ButtonPress-1>", self._start_move)
         self.root.bind("<ButtonRelease-1>", self._stop_move)
         self.root.bind("<B1-Motion>", self._do_move)
@@ -90,7 +90,7 @@ class DynamicIslandUI:
 
         self.mode_btn = tk.Button(
             top_bar,
-            text="🔴 تشغيل الاستماع اللحظي (Streaming)",
+            text="🔴 Enable Streaming (Hands-free)",
             font=("Segoe UI", 8, "bold"),
             fg="#ffffff",
             bg="#242735",
@@ -113,7 +113,7 @@ class DynamicIslandUI:
 
         self.status_lbl = tk.Label(
             text_frame,
-            text="جاهز... اتكلم بالعربي أو الإنجليزي",
+            text="Ready... Speak in Arabic or English",
             font=("Segoe UI", 11, "bold"),
             fg="#ffffff",
             bg="#12131a",
@@ -198,19 +198,19 @@ class DynamicIslandUI:
     def toggle_streaming(self):
         if not self.is_streaming:
             self.is_streaming = True
-            self.mode_btn.config(text="🟢 الاستماع اللحظي شغال (تحدث بحرية)", bg="#00805a")
-            self.set_state("listening", "🎙️ أنا سامعك لحظياً... اتكلم بأي أمر")
+            self.mode_btn.config(text="🟢 Streaming Active (Speak freely)", bg="#00805a")
+            self.set_state("listening", "🎙️ Listening... Speak your command")
             self.voice.start_streaming_listen(on_partial_callback=self._on_live_speech_chunk)
         else:
             self.is_streaming = False
             self.voice.stop_streaming_listen()
-            self.mode_btn.config(text="🔴 تشغيل الاستماع اللحظي (Streaming)", bg="#242735")
-            self.set_state("idle", "جاهز... اضغط المايك أو شغل الاستماع اللحظي")
+            self.mode_btn.config(text="🔴 Enable Streaming (Hands-free)", bg="#242735")
+            self.set_state("idle", "Ready... Click mic or enable streaming")
 
     def _on_live_speech_chunk(self, recognized_text: str):
         if not recognized_text or self.is_busy:
             return
-        self.set_state("deciding", f"🗣️ سمعت: '{recognized_text}'", "⚡ Jev يتخذ القرار فوراً...")
+        self.set_state("deciding", f"🗣️ Heard: '{recognized_text}'", "⚡ Jev Deciding...")
         threading.Thread(target=lambda: self._run_jev_action(recognized_text), daemon=True).start()
 
     def on_mic_click(self):
@@ -219,40 +219,42 @@ class DynamicIslandUI:
 
         def _worker():
             self.is_busy = True
-            self.set_state("listening", "🎙️ اتفضل اتكلم براحتك... أنا سامعك")
+            self.set_state("listening", "🎙️ Listening... Speak freely")
             text = self.voice.listen_command(timeout=8, phrase_time_limit=15)
             if text:
                 self._run_jev_action(text)
             else:
-                self.set_state("idle", "لم أسمع أمراً واضحاً. جرب مرة أخرى.")
+                self.set_state("idle", "No command heard. Please try again.")
                 self.is_busy = False
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _run_jev_action(self, command: str):
         self.is_busy = True
-        self.set_state("deciding", f"🧠 تفكير: '{command}'", "⚡ Jev Decision Engine...")
+        self.set_state("deciding", f"🧠 Processing: '{command}'", "⚡ Jev Decision Engine...")
 
         def on_callback(event_type, msg):
             if event_type == "action":
-                self.set_state("executing", f"⚡ {msg}", "جاري التنفيذ...")
+                self.set_state("executing", f"⚡ {msg}", "Executing...")
             elif event_type == "thought":
                 self.sub_lbl.config(text=msg)
 
-        result_msg = self.agent.execute_goal(command, on_step_callback=on_callback)
-        self.set_state("executing", f"✅ {result_msg}", "اكتمل بنجاح!")
+        import uiautomation as auto
+        with auto.UIAutomationInitializerInThread():
+            result_msg = self.agent.execute_goal(command, on_step_callback=on_callback)
+        self.set_state("executing", f"✅ {result_msg}", "Completed successfully!")
         self.voice.speak(result_msg)
 
         time.sleep(2.0)
         if self.is_streaming:
-            self.set_state("listening", "🎙️ مستعد لأمرك التالي...")
+            self.set_state("listening", "🎙️ Ready for next command...")
         else:
-            self.set_state("idle", "جاهز... اتكلم بالعربي أو الإنجليزي")
+            self.set_state("idle", "Ready... Speak in Arabic or English")
         self.is_busy = False
 
     def on_emergency_stop(self):
         self.controller.emergency_stop()
-        self.set_state("stopped", "🛑 تم إيقاف الحركة فوراً!")
+        self.set_state("stopped", "🛑 Emergency Stop Activated!")
         self.is_busy = False
 
 def launch_dynamic_island():

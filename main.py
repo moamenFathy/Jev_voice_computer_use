@@ -11,7 +11,7 @@ from src.ui.dynamic_island import launch_dynamic_island
 if __name__ == "__main__":
     print("=" * 60)
     print("⚡ JEV SYSTEM ONE | DYNAMIC ISLAND VOICE ASSISTANT")
-    print("🎙️ استماع لحظي وتنفيذ فوري ثنائي اللغة (عربي / إنجليزي)")
-    print("🛑 للطوارئ: اضغط ESC أو حرك الماوس لأي زاوية")
+    print("🎙️ Real-time Bilingual Voice Control (Arabic & English)")
+    print("🛑 Emergency Abort: Press ESC or move mouse to any screen corner")
     print("=" * 60)
     launch_dynamic_island()
