@@ -35,7 +35,11 @@ class VoiceEngine:
                     timeout=timeout, 
                     phrase_time_limit=phrase_time_limit
                 )
-                text = self.recognizer.recognize_google(audio, language=self.language)
+                try:
+                    text = self.recognizer.recognize_google(audio, language=self.language)
+                except sr.UnknownValueError:
+                    # Fallback to English if Arabic recognition didn't capture the phrase
+                    text = self.recognizer.recognize_google(audio, language="en-US")
                 return text.strip()
         except Exception:
             return ""
@@ -49,15 +53,20 @@ class VoiceEngine:
                 self.recognizer.adjust_for_ambient_noise(source, duration=0.4)
 
             def _audio_callback(recognizer, audio):
+                text = ""
                 try:
                     text = recognizer.recognize_google(audio, language=self.language)
-                    if text and len(text.strip().split()) >= 1:
-                        if on_partial_callback:
-                            on_partial_callback(text.strip())
                 except sr.UnknownValueError:
-                    pass
+                    try:
+                        text = recognizer.recognize_google(audio, language="en-US")
+                    except Exception:
+                        pass
                 except Exception:
                     pass
+
+                if text and len(text.strip().split()) >= 1:
+                    if on_partial_callback:
+                        on_partial_callback(text.strip())
 
             self.stop_listening_fn = self.recognizer.listen_in_background(
                 mic, 
@@ -66,7 +75,7 @@ class VoiceEngine:
             )
             self.is_listening = True
         except Exception as e:
-            print(f"❌ خطأ في بدء الاستماع: {e}")
+            print(f"❌ Error starting speech listener: {e}")
 
     def stop_streaming_listen(self):
         if self.stop_listening_fn:
