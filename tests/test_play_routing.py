@@ -1,3 +1,4 @@
+import unittest
 import sys
 from pathlib import Path
 
@@ -8,26 +9,26 @@ if str(ROOT_DIR) not in sys.path:
 from src.core.os_controller import OSController
 from src.decision.jev_engine import JevDecisionEngine
 
-def test_routing():
-    controller = OSController()
-    engine = JevDecisionEngine(controller)
+class TestPlayRouting(unittest.TestCase):
+    def setUp(self):
+        self.controller = OSController()
+        self.engine = JevDecisionEngine(self.controller)
 
-    test_goals = [
-        "شغل الاغنيه",
-        "شغل اغنية ويجز",
-        "شغل تراك عمرو دياب",
-        "شغل سورة الكهف على يوتيوب",
-        "ابحث في جوجل عن اسعار الذهب",
-        "دوس علي زرار الكلامات"
-    ]
+    def test_music_intent_detection(self):
+        test_phrases = [
+            ("شغل اغنية ويجز", True),
+            ("شغل تراك عمرو دياب", True),
+            ("شغل سورة الكهف على يوتيوب", True),
+            ("افتح المفكرة", False),
+            ("احسب 50 زائد 10", False),
+        ]
 
-    print("=== Testing Play vs Search Intent Routing ===")
-    for g in test_goals:
-        norm = engine.scanner._normalize_text(g)
-        is_music = any(w in norm for w in ["اغنيه", "تراك", "موسيقي", "مغني", "song", "track", "music"]) or (
-            norm.startswith("شغل ") and not any(app in norm for app in ["المفكره", "الحاسبه", "الرسام", "المتصفح", "كروم", "رايدر", "كود"])
-        )
-        print(f"Goal: '{g}' ➡️ Normalized: '{norm}' ➡️ Is Music Play: {is_music}")
+        for phrase, expected in test_phrases:
+            norm = self.engine.scanner._normalize_text(phrase)
+            is_music = any(w in norm for w in ["اغنيه", "تراك", "موسيقي", "مغني", "song", "track", "music"]) or (
+                norm.startswith("شغل ") and not any(app in norm for app in ["المفكره", "الحاسبه", "الرسام", "المتصفح", "كروم", "رايدر", "كود"])
+            )
+            self.assertEqual(is_music, expected, f"Failed for phrase: {phrase}")
 
 if __name__ == "__main__":
-    test_routing()
+    unittest.main()

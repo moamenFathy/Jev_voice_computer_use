@@ -1,3 +1,4 @@
+import unittest
 import sys
 from pathlib import Path
 
@@ -8,34 +9,28 @@ if str(ROOT_DIR) not in sys.path:
 from src.core.os_controller import OSController
 from src.decision.jev_engine import JevDecisionEngine
 
-def test_multi_step():
-    controller = OSController()
-    engine = JevDecisionEngine(controller)
+class TestMultistepAndEntities(unittest.TestCase):
+    def setUp(self):
+        self.controller = OSController()
+        self.engine = JevDecisionEngine(self.controller)
 
-    print("=== 1. Testing Step Decomposition ===")
-    test_goals = [
-        "افتح المفكرة واكتب تقرير اليوم وبعدين احفظ الملف",
-        "افتح يوتيوب ميوزك وشغل اغنية اغيب",
-        "افتح المتصفح وابحث عن اخبار الذكاء الاصطناعي",
-        "شغل عمرو دياب"
-    ]
+    def test_multi_step_decomposition(self):
+        steps, ap = self.engine._decompose_into_steps("افتح المفكرة واكتب تقرير اليوم وبعدين احفظ الملف")
+        self.assertEqual(len(steps), 3)
 
-    for g in test_goals:
-        steps = engine._decompose_into_steps(g)
-        print(f"Goal: '{g}'\n  ➡️ Steps ({len(steps)}): {steps}\n")
+        steps, ap = self.engine._decompose_into_steps("افتح يوتيوب ميوزك وشغل اغنية اغيب")
+        self.assertEqual(len(steps), 2)
+        self.assertEqual(steps[0], "افتح يوتيوب ميوزك")
+        self.assertEqual(steps[1], "شغل اغنية اغيب")
 
-    print("=== 2. Testing Entity & Clean Query Extraction ===")
-    query_tests = [
-        "سيرش في youtube music على اغنية اغيب",
-        "سيرش علي اغير في youtube music علي اغنيه اغيب",
-        "شغل اغنية Shape of You على سبوتيفاي",
-        "افتح اليوتيوب وشغل سورة الكهف",
-        "ابحث في جوجل عن اسعار الذهب اليوم"
-    ]
+    def test_entity_extraction(self):
+        p, q = self.engine._extract_clean_entities("سيرش في youtube music على اغنية اغيب")
+        self.assertEqual(p, "youtube_music")
+        self.assertEqual(q, "اغيب")
 
-    for qt in query_tests:
-        platform, clean_q = engine._extract_clean_entities(qt)
-        print(f"Input: '{qt}'\n  ➡️ Platform: {platform} | Clean Query: '{clean_q}'\n")
+        p, q = self.engine._extract_clean_entities("ابحث في جوجل عن اسعار الذهب اليوم")
+        self.assertEqual(p, "google")
+        self.assertEqual(q, "اسعار الذهب اليوم")
 
 if __name__ == "__main__":
-    test_multi_step()
+    unittest.main()
