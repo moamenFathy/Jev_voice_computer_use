@@ -413,6 +413,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("media_pause"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -424,6 +425,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("media_resume"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -435,6 +437,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("media_next"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -446,6 +449,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("media_prev"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -460,6 +464,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("close"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -471,6 +476,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("minimize_all"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -482,6 +488,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("save"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -493,6 +500,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("copy"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -504,6 +512,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("paste"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -515,6 +524,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("select_all"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -526,6 +536,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("volume_up"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -537,6 +548,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("volume_down"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -548,6 +560,7 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute("volume_mute"),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -570,6 +583,7 @@ class JevDecisionEngine:
                 expected=target_name,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -591,6 +605,7 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -606,6 +621,7 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -621,6 +637,7 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -636,6 +653,7 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -655,6 +673,7 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
                 on_step_callback=on_step_callback,
             )
 
@@ -687,11 +706,114 @@ class JevDecisionEngine:
                     reobserve_fn=tool.reobserve,
                     step_idx=step_idx,
                     total_steps=total_steps,
+                    is_idempotent=tool.is_idempotent,
+                    decision_path="fast_path",
                     on_step_callback=on_step_callback,
                 )
 
         # -------------------------------------------------------------
-        # 6. Jev System One Decision Engine (TypeSafe AI)
+        # 6. Expanded Zero-Latency Local Intent Fast-Path
+        # -------------------------------------------------------------
+        # A. Direct App Launch Pattern (e.g. 'افتح المفكرة', 'افتح رايدر', 'open notepad')
+        m_launch = re.match(r'^(?:افتح|شغل|open|launch|run|start)\s+(.+)$', norm_goal, flags=re.IGNORECASE)
+        if m_launch:
+            pot_app = m_launch.group(1).strip()
+            norm_pot = self.scanner._normalize_text(pot_app)
+            # Check if recognized as application or protocol
+            if (
+                pot_app in self.app_resolver.arabic_alias_map
+                or norm_pot in self.app_resolver.arabic_alias_map
+                or pot_app in self.app_resolver.apps
+                or pot_app in self.app_resolver.direct_targets
+                or any(k in norm_pot for k in ["نوت باد", "المفكر", "حاسب", "كود", "رايدر", "كروم", "ايدج", "رسام", "paint", "notepad", "calc", "rider", "code"])
+            ):
+                thought = f"⚡ Fast Local Match: Launch App '{pot_app}' (0ms local decision)"
+                print(f"[THOUGHT] {thought}")
+                if on_step_callback:
+                    on_step_callback("thought", thought)
+                tool = self.tools["launch_app"]
+                return self.runtime.execute_step(
+                    action="launch_app",
+                    target=pot_app,
+                    execute_fn=lambda: tool.execute(pot_app),
+                    observer_fn=lambda: tool.observe(pot_app),
+                    verifier=tool.get_verifier(),
+                    expected=pot_app,
+                    step_idx=step_idx,
+                    total_steps=total_steps,
+                    is_idempotent=tool.is_idempotent,
+                    decision_path="fast_path",
+                    on_step_callback=on_step_callback,
+                )
+
+        # B. Direct Text Typing Pattern (e.g. 'اكتب تقرير اليوم', 'type Hello World')
+        m_type = re.match(r'^(?:اكتب|type|write)\s+(.+)$', step_goal, flags=re.IGNORECASE)
+        if m_type:
+            text_to_type = m_type.group(1).strip()
+            thought = f"⚡ Fast Local Match: Type Text '{text_to_type}' (0ms local decision)"
+            print(f"[THOUGHT] {thought}")
+            if on_step_callback:
+                on_step_callback("thought", thought)
+            tool = self.tools["type_text"]
+            return self.runtime.execute_step(
+                action="type_text",
+                target=text_to_type,
+                execute_fn=lambda: tool.execute(text_to_type),
+                observer_fn=lambda: tool.observe(text_to_type),
+                verifier=tool.get_verifier(),
+                expected=text_to_type,
+                reobserve_fn=tool.reobserve,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="fast_path",
+                on_step_callback=on_step_callback,
+            )
+
+        # C. Direct Math Calculation Pattern (e.g. 'احسب 50 في 12', 'calculate 1500 / 3')
+        m_math = re.match(r'^(?:احسب|calculate|calc|compute)\s+(.+)$', step_goal, flags=re.IGNORECASE)
+        if m_math:
+            thought = f"⚡ Fast Local Match: Math Calculation (0ms local decision)"
+            print(f"[THOUGHT] {thought}")
+            if on_step_callback:
+                on_step_callback("thought", thought)
+            tool = self.tools["math_calculate"]
+            return self.runtime.execute_step(
+                action="math_calculate",
+                target=step_goal,
+                execute_fn=lambda: tool.execute(step_goal),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="fast_path",
+                on_step_callback=on_step_callback,
+            )
+
+        # D. Direct Web Search Pattern (e.g. 'ابحث في جوجل عن أخبار AI', 'search google for...')
+        m_search = re.match(r'^(?:ابحث\s+في\s+جوجل\s+عن|سيرش\s+في\s+جوجل\s+على|ابحث\s+عن|سيرش\s+على|search\s+google\s+for|search\s+for)\s+(.+)$', norm_goal, flags=re.IGNORECASE)
+        if m_search:
+            query = m_search.group(1).strip()
+            thought = f"⚡ Fast Local Match: Web Search '{query}' (0ms local decision)"
+            print(f"[THOUGHT] {thought}")
+            if on_step_callback:
+                on_step_callback("thought", thought)
+            tool = self.tools["web_search"]
+            return self.runtime.execute_step(
+                action="web_search",
+                target=query,
+                execute_fn=lambda: tool.execute(query),
+                observer_fn=lambda: tool.observe(query),
+                verifier=tool.get_verifier(),
+                expected=query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="fast_path",
+                on_step_callback=on_step_callback,
+            )
+
+        # -------------------------------------------------------------
+        # 7. Jev System One Decision Engine (TypeSafe AI)
         # -------------------------------------------------------------
         print("[THINKING] Calling Jev Decision Model (TypeSafe AI)...")
         if on_step_callback:
@@ -818,6 +940,9 @@ class JevDecisionEngine:
                 expected=app_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -834,6 +959,9 @@ class JevDecisionEngine:
                 reobserve_fn=tool.reobserve,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -861,6 +989,9 @@ class JevDecisionEngine:
                 reobserve_fn=tool.reobserve,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -878,6 +1009,9 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -892,6 +1026,9 @@ class JevDecisionEngine:
                 expected=clean_query,
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -903,6 +1040,9 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute(step_goal),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -920,6 +1060,9 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute(target_cmd),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 
@@ -938,6 +1081,9 @@ class JevDecisionEngine:
                 execute_fn=lambda: tool.execute(target_vol),
                 step_idx=step_idx,
                 total_steps=total_steps,
+                is_idempotent=tool.is_idempotent,
+                decision_path="system_one",
+                t_decision_ms=latency_ms,
                 on_step_callback=on_step_callback,
             )
 

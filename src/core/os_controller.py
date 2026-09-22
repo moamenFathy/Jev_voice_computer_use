@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from PIL import Image, ImageGrab
 import pyautogui
 import pyperclip
@@ -12,10 +13,48 @@ pyautogui.PAUSE = 0.1
 class OSController:
     def __init__(self):
         self.stop_requested = False
+        self._global_listener = None
+        self._on_abort_callback = None
         try:
             self.screen_width, self.screen_height = pyautogui.size()
         except Exception:
             self.screen_width, self.screen_height = 1920, 1080
+
+    def start_global_emergency_listener(self, on_abort_callback=None):
+        """
+        Starts an OS-level background keyboard listener via pynput to intercept the Escape key
+        regardless of which application window currently has focus.
+        """
+        self._on_abort_callback = on_abort_callback
+        if self._global_listener is not None:
+            return
+
+        try:
+            from pynput import keyboard
+
+            def _on_press(key):
+                if key == keyboard.Key.esc:
+                    print("\n🛑 [GLOBAL HOTKEY] Escape pressed anywhere in OS! Triggering emergency stop.")
+                    self.emergency_stop()
+                    if self._on_abort_callback:
+                        try:
+                            self._on_abort_callback()
+                        except Exception as e:
+                            print(f"[DEBUG] Error in on_abort_callback: {e}")
+
+            self._global_listener = keyboard.Listener(on_press=_on_press, daemon=True)
+            self._global_listener.start()
+        except Exception as e:
+            print(f"[DEBUG] Could not initialize pynput global keyboard listener: {e}")
+
+    def stop_global_emergency_listener(self):
+        """Stops the global keyboard listener."""
+        if self._global_listener:
+            try:
+                self._global_listener.stop()
+            except Exception:
+                pass
+            self._global_listener = None
 
     def capture_screenshot(self, target_size=(1280, 720)) -> tuple[Image.Image, str]:
         """التقاط صورة الشاشة بأعلى كفاءة"""
@@ -99,8 +138,8 @@ class OSController:
                 time.sleep(0.04)
                 ctypes.windll.user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[DEBUG] Win32 keybd_event notice: {e}")
 
         key_map = {
             "enter": "enter", "return": "enter", "win": "win", "windows": "win",

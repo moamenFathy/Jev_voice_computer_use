@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
+import queue
 import time
 import math
 from src.core.os_controller import OSController
 from src.voice.voice_engine import VoiceEngine
+from src.voice.intent_filter import is_valid_voice_command, is_incomplete_utterance
 from src.decision.jev_engine import JevDecisionEngine
 
 
@@ -34,6 +36,15 @@ class DynamicIslandUI:
         self.is_busy = False
         self.wave_phase = 0
         self.current_state = "idle"
+        self._accumulated_speech = ""
+
+        # Thread-safe Command Queue & Serialized Worker
+        self.command_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._command_worker_loop, daemon=True)
+        self.worker_thread.start()
+
+        # Start Global OS-Wide Emergency Listener (pynput)
+        self.controller.start_global_emergency_listener(on_abort_callback=lambda: self.root.after(0, self.on_emergency_stop))
 
         # Drag & Move bindings
         self.root.bind("<ButtonPress-1>", self._start_move)
@@ -85,7 +96,7 @@ class DynamicIslandUI:
             activebackground="#12131a",
             relief="flat",
             cursor="hand2",
-            command=self.root.destroy
+            command=self.on_close
         )
         close_btn.pack(side="right", padx=(5, 0))
 
@@ -223,33 +234,75 @@ class DynamicIslandUI:
             self.set_state("idle", "Ready... Click mic or enable streaming", "⚡ Jev Decision Engine (Ready)")
 
     def _on_live_speech_chunk(self, recognized_text: str):
-        if not recognized_text or self.is_busy:
+        """Streaming speech callback with live transcription, accumulator, and false-trigger rejection."""
+        if not recognized_text:
             return
-        threading.Thread(target=lambda: self._run_jev_action(recognized_text), daemon=True).start()
+
+        # Check if the user is in the middle of a compound thought
+        combined = f"{self._accumulated_speech} {recognized_text}".strip() if self._accumulated_speech else recognized_text.strip()
+
+        # Display live transcription immediately
+        self.set_state("listening", f"🎙️ \"{combined}\"", "Live Speech (Listening...)")
+
+        if is_incomplete_utterance(combined):
+            # User took a natural breath or ended with a connective (e.g. 'واكتب', 'في', 'and then')
+            self._accumulated_speech = combined
+            self.set_state("listening", f"🎙️ \"{combined}...\"", "Waiting for you to complete your ask...")
+            return
+
+        # Utterance is complete: validate and enqueue
+        self._accumulated_speech = ""
+        is_valid, clean_cmd = is_valid_voice_command(combined, streaming_mode=True)
+        if not is_valid:
+            return
+
+        # Enqueue command for deterministic sequential execution
+        self.command_queue.put(clean_cmd)
 
     def on_mic_click(self):
         if self.is_busy:
             return
 
         def _worker():
-            self.is_busy = True
             try:
-                self.set_state("listening", "🎙️ Listening... Speak freely", "Listening for voice command...")
-                text = self.voice.listen_command(timeout=8, phrase_time_limit=15)
+                self.set_state("listening", "🎙️ Listening... Speak your full command", "Listening...")
+                text = self.voice.listen_command(timeout=10, phrase_time_limit=25)
                 if text:
-                    self._run_jev_action(text)
+                    self.set_state("listening", f"🎙️ \"{text}\"", "Transcribed")
+                    is_valid, clean_cmd = is_valid_voice_command(text, streaming_mode=False)
+                    if is_valid:
+                        self.command_queue.put(clean_cmd)
+                    else:
+                        self.set_state("idle", "Non-actionable audio discarded.", "Ready")
                 else:
                     self.set_state("idle", "No speech detected. Click 🎙️ to try again.", "Ready")
             except Exception as e:
                 print(f"[DynamicIsland] Mic listener error: {e}")
                 self.set_state("idle", "Ready... Speak in Arabic or English", "Ready")
-            finally:
-                self.is_busy = False
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _command_worker_loop(self):
+        """Dedicated serialized worker thread consuming commands sequentially from the queue."""
+        while True:
+            try:
+                command = self.command_queue.get()
+                if command is None:
+                    break
+
+                self.is_busy = True
+                self._run_jev_action(command)
+                self.command_queue.task_done()
+            except Exception as e:
+                print(f"[DynamicIsland] Worker loop error: {e}")
+            finally:
+                self.is_busy = False
+                if self.is_streaming:
+                    self.set_state("listening", "🎙️ Ready for next command...", "Streaming active")
+                else:
+                    self.set_state("idle", "Ready... Speak in Arabic or English", "⚡ Jev Decision Engine (Ready)")
+
     def _run_jev_action(self, command: str):
-        self.is_busy = True
         try:
             self.set_state("deciding", f"🧠 Processing: '{command}'", "⚡ Jev Decision Engine...")
 
@@ -276,23 +329,28 @@ class DynamicIslandUI:
                 self.set_state("error", f"❌ {result_str}", "Operation failed")
 
             self.voice.speak(result_str)
-            time.sleep(1.5)
+            time.sleep(1.2)
 
         except Exception as e:
             print(f"[DynamicIsland] Error during execution: {e}")
             self.set_state("error", f"❌ Error: {e}", "Execution error")
-            time.sleep(1.5)
-        finally:
-            self.is_busy = False
-            if self.is_streaming:
-                self.set_state("listening", "🎙️ Ready for next command...", "Streaming active")
-            else:
-                self.set_state("idle", "Ready... Speak in Arabic or English", "⚡ Jev Decision Engine (Ready)")
+            time.sleep(1.2)
 
     def on_emergency_stop(self):
+        """Aborts active OS actions and clears pending commands from the queue."""
         self.controller.emergency_stop()
-        self.set_state("stopped", "🛑 Emergency Stop Activated!", "Stopped by user")
+        with self.command_queue.mutex:
+            self.command_queue.queue.clear()
+        self.set_state("stopped", "🛑 Emergency Stop Activated!", "Stopped by user (ESC)")
         self.is_busy = False
+
+    def on_close(self):
+        """Gracefully shuts down listeners and destroys window."""
+        self.controller.stop_global_emergency_listener()
+        if self.is_streaming:
+            self.voice.stop_streaming_listen()
+        self.command_queue.put(None)
+        self.root.destroy()
 
 
 def launch_dynamic_island():
