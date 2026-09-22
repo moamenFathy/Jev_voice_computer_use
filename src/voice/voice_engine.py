@@ -17,15 +17,16 @@ class VoiceEngine:
     def __init__(self, language: str = VOICE_LANGUAGE):
         self.language = language
         self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = 300
+        self.recognizer.energy_threshold = 280
         self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 1.4  # مهلة مريحة لعدم مقاطعة الكلام
-        self.recognizer.non_speaking_duration = 0.8
+        # Natural speech boundary thresholds (allows comfortable pauses without cutting off)
+        self.recognizer.pause_threshold = 1.1
+        self.recognizer.non_speaking_duration = 0.5
         self.is_listening = False
         self.stop_listening_fn = None
         self.command_queue = queue.Queue()
 
-    def listen_command(self, timeout: int = 8, phrase_time_limit: int = 15) -> str:
+    def listen_command(self, timeout: int = 10, phrase_time_limit: int = 25) -> str:
         try:
             with sr.Microphone() as source:
                 self.is_listening = True
@@ -71,7 +72,7 @@ class VoiceEngine:
             self.stop_listening_fn = self.recognizer.listen_in_background(
                 mic, 
                 _audio_callback, 
-                phrase_time_limit=15
+                phrase_time_limit=25
             )
             self.is_listening = True
         except Exception as e:
