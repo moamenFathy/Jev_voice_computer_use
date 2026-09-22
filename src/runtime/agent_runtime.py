@@ -1,19 +1,19 @@
 """
 Agent Runtime for JEV Reliability Architecture (Phase 1).
-Executes actions within a bounded retry loop with explicit observations, concrete verifications,
-and reliability metrics.
+Executes actions within a bounded retry loop with real observations, concrete verifications,
+and explicit verification status (VERIFIED vs UNAVAILABLE vs FAILED).
 """
 
 import time
 from typing import Any, Callable, Dict, Optional
-from src.core.tool_result import ToolResult, FailureReason
+from src.core.tool_result import ToolResult, FailureReason, VerificationStatus
 from src.core.observation import Observation
 from src.verification.verifier import Verifier, VerificationResult
 
 
 class AgentRuntime:
     """
-    Orchestrates execution of atomic actions with observation, verification,
+    Orchestrates execution of atomic actions with real observation, verification,
     and bounded retries.
     """
 
@@ -38,19 +38,20 @@ class AgentRuntime:
         observer_fn: Optional[Callable[[], Observation]] = None,
         verifier: Optional[Verifier] = None,
         expected: str = "",
+        reobserve_fn: Optional[Callable[[], None]] = None,
         step_idx: int = 1,
         total_steps: int = 1,
         on_step_callback: Optional[Callable[[str, str], None]] = None,
     ) -> ToolResult:
         """
-        Executes a single step with the reliability cycle:
+        Executes a single step with the strict reliability cycle:
         Execute -> Observe -> Verify -> Success / Retry / Failure
         """
         self.total_steps += 1
         last_result: Optional[ToolResult] = None
 
         for attempt in range(1, self.max_retries + 2):
-            step_header = f"[STEP {step_idx}/{total_steps}] Action: {action} | Target: '{target}' | Attempt: {attempt}"
+            step_header = f"[STEP {step_idx}/{total_steps}]\nAction: {action}\nTarget: '{target}'\nAttempt: {attempt}"
             print(f"\n{step_header}")
 
             if on_step_callback and attempt == 1:
@@ -65,32 +66,39 @@ class AgentRuntime:
                     tool=action,
                     error=f"Exception during execution: {e}",
                     failure_reason=FailureReason.EXECUTION_ERROR,
+                    execution_success=False,
+                    verification_status=VerificationStatus.FAILED,
                     retryable=False,
                 )
 
             last_result = result
-            print(f"[EXECUTION] success={str(result.success).lower()}")
+            print(f"[EXECUTION]\nsuccess={str(result.execution_success).lower()}")
 
             # 2. If Execution Failed
-            if not result.success:
+            if not result.execution_success or not result.success:
                 self.execution_failures += 1
                 err_msg = result.error or result.message or "Execution failed"
-                print(f"[ERROR] {err_msg}")
+                print(f"[ERROR]\n{err_msg}")
 
                 if result.retryable and attempt <= self.max_retries:
                     self.retries_attempted += 1
-                    print(f"[RETRY] retryable=true. Waiting {self.retry_delay}s before attempt {attempt + 1}...")
+                    print(f"[RETRY]\nretryable=true. Waiting {self.retry_delay}s before attempt {attempt + 1}...")
                     if on_step_callback:
                         on_step_callback("status", f"⏳ Retrying {action} (attempt {attempt + 1})...")
                     time.sleep(self.retry_delay)
+                    if reobserve_fn:
+                        try:
+                            reobserve_fn()
+                        except Exception:
+                            pass
                     continue
                 else:
-                    print("[RESULT] FAILED")
+                    print("[RESULT]\nFAILED")
                     if on_step_callback:
                         on_step_callback("error", f"❌ {action} failed: {err_msg}")
                     return result
 
-            # 3. If Execution Succeeded -> Observation & Verification
+            # 3. If Execution Succeeded -> Real Observation & Verification
             if verifier and observer_fn:
                 try:
                     observation = observer_fn()
@@ -101,7 +109,7 @@ class AgentRuntime:
                         data={},
                     )
 
-                print(f"[OBSERVATION] source={observation.source} | {observation.description}")
+                print(f"[OBSERVATION]\nsource={observation.source}\n{observation.description}")
 
                 verification_target = expected if expected else target
                 try:
@@ -109,19 +117,22 @@ class AgentRuntime:
                 except Exception as e:
                     ver_result = VerificationResult(
                         verified=False,
+                        status=VerificationStatus.FAILED,
                         message=f"Verifier exception: {e}",
                     )
 
-                print(f"[VERIFICATION] verified={str(ver_result.verified).lower()} | {ver_result.message}")
+                print(f"[VERIFICATION]\nverified={str(ver_result.verified).lower()}\nstatus={ver_result.status.value if ver_result.status else 'unknown'}")
 
                 if ver_result.verified:
                     self.successful_steps += 1
-                    print("[RESULT] SUCCESS")
+                    print("[RESULT]\nSUCCESS")
                     final_tool_res = ToolResult(
                         success=True,
                         tool=action,
                         message=ver_result.message or result.message,
                         data=observation.data,
+                        execution_success=True,
+                        verification_status=VerificationStatus.VERIFIED,
                         evidence=ver_result.evidence,
                     )
                     if on_step_callback:
@@ -131,18 +142,25 @@ class AgentRuntime:
                     self.verification_failures += 1
                     if attempt <= self.max_retries:
                         self.retries_attempted += 1
-                        print(f"[RETRY] Verification failed, retryable=true. Waiting {self.retry_delay}s...")
+                        print(f"[RETRY]\nVerification failed, retryable=true. Waiting {self.retry_delay}s before attempt {attempt + 1}...")
                         if on_step_callback:
                             on_step_callback("status", f"⏳ Re-verifying {action} (attempt {attempt + 1})...")
                         time.sleep(self.retry_delay)
+                        if reobserve_fn:
+                            try:
+                                reobserve_fn()
+                            except Exception:
+                                pass
                         continue
                     else:
-                        print("[RESULT] FAILED (Verification)")
+                        print("[RESULT]\nFAILED (Verification)")
                         fail_res = ToolResult(
                             success=False,
                             tool=action,
                             error=f"Verification failed: {ver_result.message}",
                             failure_reason=FailureReason.VERIFICATION_FAILED,
+                            execution_success=True,
+                            verification_status=VerificationStatus.FAILED,
                             retryable=False,
                             evidence=ver_result.evidence,
                         )
@@ -150,19 +168,23 @@ class AgentRuntime:
                             on_step_callback("error", f"❌ Verification failed: {ver_result.message}")
                         return fail_res
 
-            # No verifier needed, pure tool success
+            # No verifier configured: Action executed but verification is explicitly marked UNAVAILABLE
             self.successful_steps += 1
-            print("[RESULT] SUCCESS")
+            result.verification_status = VerificationStatus.UNAVAILABLE
+            print(f"[VERIFICATION]\nstatus=unavailable (No verifier configured)")
+            print("[RESULT]\nSUCCESS (Executed)")
             if on_step_callback:
                 on_step_callback("finished", result.message)
             return result
 
-        print("[RESULT] FAILED (Retries exhausted)")
+        print("[RESULT]\nFAILED (Retries exhausted)")
         return last_result or ToolResult(
             success=False,
             tool=action,
             error="Exhausted all retries without success.",
             failure_reason=FailureReason.TIMEOUT,
+            execution_success=False,
+            verification_status=VerificationStatus.FAILED,
             retryable=False,
         )
 

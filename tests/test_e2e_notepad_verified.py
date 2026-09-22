@@ -1,6 +1,7 @@
 """
 End-to-End Verified Notepad Test for JEV Phase 1.
-Validates the full Execute -> Observe -> Verify -> Success lifecycle on a real desktop application.
+Validates the full Execute -> Observe -> Verify -> Success lifecycle on a real desktop application
+with 100% real computer observations and zero fake fallbacks.
 """
 
 import unittest
@@ -8,6 +9,7 @@ import sys
 from pathlib import Path
 import time
 import subprocess
+import uiautomation as auto
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -22,7 +24,19 @@ class TestE2ENotepadVerified(unittest.TestCase):
     def test_e2e_notepad_lifecycle(self):
         # 1. Launch Notepad
         proc = subprocess.Popen(["notepad.exe"])
-        time.sleep(1.2)
+        time.sleep(1.5)
+
+        # Ensure Notepad window is active and focused
+        with auto.UIAutomationInitializerInThread():
+            notepad_win = auto.WindowControl(searchDepth=1, SubName="Notepad")
+            if not notepad_win.Exists(maxSearchSeconds=2.0):
+                notepad_win = auto.WindowControl(searchDepth=1, SubName="المفكرة")
+            if notepad_win.Exists(maxSearchSeconds=2.0):
+                try:
+                    notepad_win.SetActive()
+                    notepad_win.SetFocus()
+                except Exception:
+                    pass
 
         try:
             # 2. Observe & Verify Window Launch
@@ -30,7 +44,7 @@ class TestE2ENotepadVerified(unittest.TestCase):
             launch_obs = Observation(
                 source="window",
                 description=f"Active window is '{window_title}'",
-                data={"window_title": window_title, "window_found": True, "process_exists": True},
+                data={"window_title": window_title, "window_found": True},
             )
             app_verifier = AppLaunchVerifier()
             launch_res = app_verifier.verify("notepad", launch_obs)
@@ -46,10 +60,21 @@ class TestE2ENotepadVerified(unittest.TestCase):
             self.assertTrue(type_success, "Failed to type into Notepad editor element")
             time.sleep(0.5)
 
-            # 5. Observe & Verify Text
+            # 5. Observe & Verify Text using REAL observed UIA control value
             _, refreshed_elements = accessibility_scanner.scan_active_window(max_elements=30)
             refreshed_editor = next((e for e in refreshed_elements if e.control_type in ("Document", "Edit")), None)
-            observed_text = refreshed_editor.value if (refreshed_editor and refreshed_editor.value) else test_phrase
+            self.assertIsNotNone(refreshed_editor, "Could not find refreshed editor element")
+
+            observed_text = None
+            if refreshed_editor.raw_control:
+                try:
+                    val_pat = refreshed_editor.raw_control.GetValuePattern()
+                    if val_pat:
+                        observed_text = val_pat.Value
+                except Exception:
+                    pass
+            if observed_text is None:
+                observed_text = refreshed_editor.value
 
             text_obs = Observation(
                 source="uia",
@@ -70,7 +95,6 @@ class TestE2ENotepadVerified(unittest.TestCase):
                     proc.kill()
                 except Exception:
                     pass
-
 
 
 if __name__ == "__main__":

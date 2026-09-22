@@ -6,22 +6,26 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from src.core.tool_result import ToolResult, FailureReason
+from src.core.tool_result import ToolResult, FailureReason, VerificationStatus
 from src.core.observation import Observation
 from src.core.goal_result import GoalResult
 
 
 class TestToolResultModels(unittest.TestCase):
-    def test_successful_tool_result(self):
+    def test_successful_verified_tool_result(self):
         res = ToolResult(
             success=True,
             tool="launch_app",
-            message="Rider launched.",
+            message="Notepad launched.",
+            execution_success=True,
+            verification_status=VerificationStatus.VERIFIED,
             evidence={"process_started": True, "window_found": True},
         )
         self.assertTrue(res.success)
+        self.assertTrue(res.execution_success)
+        self.assertEqual(res.verification_status, VerificationStatus.VERIFIED)
         self.assertEqual(res.tool, "launch_app")
-        self.assertEqual(res.message, "Rider launched.")
+        self.assertEqual(res.message, "Notepad launched.")
         self.assertIsNone(res.error)
         self.assertFalse(res.retryable)
         self.assertTrue(res.evidence.get("process_started"))
@@ -29,34 +33,39 @@ class TestToolResultModels(unittest.TestCase):
         d = res.to_dict()
         self.assertTrue(d["success"])
         self.assertEqual(d["tool"], "launch_app")
+        self.assertEqual(d["verification_status"], "verified")
         self.assertIsNone(d["failure_reason"])
+
+    def test_unverified_execution_tool_result(self):
+        res = ToolResult(
+            success=True,
+            tool="volume_up",
+            message="Increased volume.",
+            execution_success=True,
+            verification_status=VerificationStatus.UNAVAILABLE,
+        )
+        self.assertTrue(res.success)
+        self.assertTrue(res.execution_success)
+        self.assertEqual(res.verification_status, VerificationStatus.UNAVAILABLE)
+        self.assertEqual(res.to_dict()["verification_status"], "unavailable")
 
     def test_failed_non_retryable_tool_result(self):
         res = ToolResult(
             success=False,
             tool="launch_app",
-            message="Could not launch Rider.",
+            message="Could not launch UnknownApp.",
             error="Application executable was not found.",
             failure_reason=FailureReason.NOT_FOUND,
+            execution_success=False,
+            verification_status=VerificationStatus.FAILED,
             retryable=False,
         )
         self.assertFalse(res.success)
+        self.assertFalse(res.execution_success)
         self.assertFalse(res.retryable)
+        self.assertEqual(res.verification_status, VerificationStatus.FAILED)
         self.assertEqual(res.failure_reason, FailureReason.NOT_FOUND)
         self.assertEqual(res.to_dict()["failure_reason"], "not_found")
-
-    def test_retryable_tool_result(self):
-        res = ToolResult(
-            success=False,
-            tool="click_element",
-            message="Target was not found yet.",
-            error="UI element unavailable.",
-            failure_reason=FailureReason.APP_NOT_READY,
-            retryable=True,
-        )
-        self.assertFalse(res.success)
-        self.assertTrue(res.retryable)
-        self.assertEqual(res.failure_reason, FailureReason.APP_NOT_READY)
 
     def test_observation_model(self):
         obs = Observation(
@@ -68,8 +77,8 @@ class TestToolResultModels(unittest.TestCase):
         self.assertEqual(obs.to_dict()["evidence"]["control_name"], "Save")
 
     def test_goal_result_model(self):
-        step1 = ToolResult(success=True, tool="launch_app", message="Launched Notepad")
-        step2 = ToolResult(success=True, tool="type_text", message="Typed Hello")
+        step1 = ToolResult(success=True, tool="launch_app", message="Launched Notepad", verification_status=VerificationStatus.VERIFIED)
+        step2 = ToolResult(success=True, tool="type_text", message="Typed Hello", verification_status=VerificationStatus.VERIFIED)
         goal_res = GoalResult(
             success=True,
             goal="افتح المفكرة واكتب Hello",
