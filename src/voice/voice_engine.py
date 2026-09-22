@@ -89,13 +89,34 @@ class VoiceEngine:
 
         def _run_tts():
             try:
-                output_file = str(TEMP_DIR / f"tts_{os.getpid()}_{int(time.time())}.mp3")
                 import asyncio
+                import io
+                audio_buffer = io.BytesIO()
+
                 async def _gen():
                     communicate = edge_tts.Communicate(text, TTS_VOICE)
-                    await communicate.save(output_file)
-                asyncio.run(_gen())
+                    async for chunk in communicate.stream():
+                        if chunk["type"] == "audio":
+                            audio_buffer.write(chunk["data"])
 
+                asyncio.run(_gen())
+                audio_buffer.seek(0)
+
+                if audio_buffer.getbuffer().nbytes > 0:
+                    try:
+                        pygame.mixer.music.load(audio_buffer)
+                        pygame.mixer.music.play()
+                        if block:
+                            while pygame.mixer.music.get_busy():
+                                pygame.time.Clock().tick(10)
+                        return
+                    except Exception:
+                        pass
+
+                # Fallback to temp file if buffer loading fails on older systems
+                output_file = str(TEMP_DIR / f"tts_{os.getpid()}_{int(time.time())}.mp3")
+                with open(output_file, "wb") as f:
+                    f.write(audio_buffer.getvalue())
                 if os.path.exists(output_file):
                     pygame.mixer.music.load(output_file)
                     pygame.mixer.music.play()

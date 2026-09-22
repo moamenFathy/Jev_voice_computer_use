@@ -170,21 +170,41 @@ class AccessibilityScanner:
     @ensure_com_initialized
     def get_active_window(self) -> Optional[Any]:
         """Gets the top-level foreground active window control."""
+        ignore_names = {"desktop 1", "desktop", "program manager", "taskbar", "shell_traywnd", "windows input experience"}
+
         try:
             focused = auto.GetFocusedControl()
-            if not focused:
-                return None
-            current = focused
-            while current:
-                if current.ControlType == auto.ControlType.WindowControl:
-                    return current
-                parent = current.GetParentControl()
-                if not parent or parent == auto.GetRootControl():
-                    return current
-                current = parent
-            return focused
+            if focused:
+                current = focused
+                while current:
+                    c_name = (current.Name or "").strip().lower()
+                    if current.ControlType == auto.ControlType.WindowControl and c_name not in ignore_names:
+                        return current
+                    parent = current.GetParentControl()
+                    if not parent or parent == auto.GetRootControl():
+                        if current.ControlType == auto.ControlType.WindowControl and c_name not in ignore_names:
+                            return current
+                        break
+                    current = parent
         except Exception:
-            return None
+            pass
+
+        # Robust Fallback: Enumerate top-level Windows from RootControl
+        try:
+            root = auto.GetRootControl()
+            child = root.GetFirstChildControl()
+            while child:
+                if child.ControlType == auto.ControlType.WindowControl:
+                    name = (child.Name or "").strip().lower()
+                    if name and name not in ignore_names and not child.IsOffscreen:
+                        return child
+                child = child.GetNextSiblingControl()
+        except Exception:
+            pass
+
+        return None
+
+
 
     @ensure_com_initialized
     def scan_active_window(
@@ -404,6 +424,54 @@ class AccessibilityScanner:
                 return elem
 
         return None
+
+    def find_search_result_links(self, elements: List[UIElement], query_hint: str = "") -> Optional[UIElement]:
+        """
+        Universally identifies the top organic search result link or primary header link
+        in an active browser search page (Google, Bing, DuckDuckGo, etc.).
+        """
+        # Exclude navigation bar / search tools / header UI
+        candidates = []
+        hint_words = [w.lower() for w in query_hint.split() if len(w) > 2] if query_hint else []
+
+        for elem in elements:
+            # Result links are typically Hyperlink, ListItem, or Text controls in the main body (top > 120, height >= 12)
+            if elem.control_type in ("Hyperlink", "ListItem", "Text", "Button") and elem.top > 120 and elem.width > 60:
+                name_clean = (elem.name or "").strip()
+                if not name_clean or len(name_clean) < 3:
+                    continue
+                # Skip search engine UI buttons and navigation tabs
+                skip_keywords = ["all", "images", "videos", "news", "maps", "tools", "settings", "sign in", "google apps", "بحث", "الكل", "صور", "فيديو", "أخبار", "خرائط", "أدوات"]
+                if name_clean.lower() in skip_keywords:
+                    continue
+
+                score = 0
+                if elem.control_type == "Hyperlink":
+                    score += 30
+                if any(hw in name_clean.lower() for hw in hint_words):
+                    score += 50
+
+                candidates.append((elem, score, elem.top))
+
+        if candidates:
+            # Prioritize matching hint, then lowest top coordinate (topmost result)
+            candidates.sort(key=lambda c: (-c[1], c[2]))
+            return candidates[0][0]
+
+        return None
+
+    @ensure_com_initialized
+    def click_top_search_result(self, query_hint: str = "", auto_wait: float = 0.8) -> bool:
+        """
+        Autonomous Web Navigator: Scans active browser window after search and clicks the
+        top organic search result link directly to navigate into the destination site.
+        """
+        time.sleep(auto_wait)
+        _, elements = self.scan_active_window(max_elements=40, interactive_only=False)
+        link = self.find_search_result_links(elements, query_hint=query_hint)
+        if link:
+            return self.click_element(link)
+        return False
 
     @ensure_com_initialized
     def click_element(self, element: UIElement) -> bool:
