@@ -305,6 +305,13 @@ class AccessibilityScanner:
         # Common phonetic variants
         t = t.replace('الكلامات', 'الكلمات').replace('كلامات', 'كلمات')
         t = t.replace('البعدها', 'بعدها').replace('القبلها', 'قبلها')
+        # Arabic phonetic domain extensions
+        t = re.sub(r'\s*دوت\s*كوم\b', '.com', t)
+        t = re.sub(r'\s*دوت\s*نت\b', '.net', t)
+        t = re.sub(r'\s*دوت\s*اور[جغ]\b', '.org', t)
+        t = re.sub(r'\s*دوت\s*اي\s*او\b', '.io', t)
+        t = re.sub(r'\s*دوت\s*اي\s*جي\b', '.eg', t)
+        t = re.sub(r'\s*دوت\s*اي\s*اي\b', '.ai', t)
         return t
 
     def find_best_match(self, query: str, elements: List[UIElement]) -> Optional[Tuple[UIElement, float]]:
@@ -435,11 +442,39 @@ class AccessibilityScanner:
     def type_into_element(self, element: UIElement, text: str, clear_first: bool = True) -> bool:
         """
         Types text into an Edit/Document/Input element.
-        Uses native ValuePattern or focuses and uses safe Unicode clipboard typing.
+        Uses native ValuePattern, programmatic SetFocus, or safe Unicode clipboard typing.
         """
-        # Focus & Unicode paste
+        # Strategy 1: Programmatic ValuePattern
         try:
-            pyautogui.click(element.center_x, element.center_y)
+            if element.raw_control:
+                val_pat = element.raw_control.GetValuePattern()
+                if val_pat and not val_pat.IsReadOnly:
+                    val_pat.SetValue(text)
+                    return True
+        except Exception:
+            pass
+
+        # Strategy 2: Programmatic SetFocus + Unicode paste
+        try:
+            if element.raw_control:
+                element.raw_control.SetFocus()
+                time.sleep(0.05)
+                if clear_first:
+                    pyautogui.hotkey("ctrl", "a")
+                    pyautogui.press("backspace")
+                    time.sleep(0.05)
+                pyperclip.copy(text)
+                pyautogui.hotkey("ctrl", "v")
+                return True
+        except Exception:
+            pass
+
+        # Strategy 3: Safe Coordinate Click + Unicode paste
+        try:
+            screen_w, screen_h = pyautogui.size()
+            safe_x = max(10, min(screen_w - 10, element.center_x))
+            safe_y = max(10, min(screen_h - 10, element.center_y))
+            pyautogui.click(safe_x, safe_y)
             time.sleep(0.1)
 
             if clear_first:
@@ -453,6 +488,7 @@ class AccessibilityScanner:
         except Exception as e:
             print(f"[AccessibilityScanner] Type failed: {e}")
             return False
+
 
     def universal_in_app_search(self, query: str, auto_play: bool = False) -> Tuple[bool, str]:
         """
