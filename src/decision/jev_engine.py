@@ -1,17 +1,23 @@
+"""
+Jev Decision Engine & Cognitive Planning Layer.
+Powered by TypeSafe AI System One with Sub-Second Latency and Zero LLM Chat Overhead.
+Orchestrates tool dispatch, bilingual entity sanitization, and compound multi-step goal execution.
+"""
+
 import os
 import re
 import time
 import urllib.parse
-import urllib.request
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 from typesafe_sdk import TypeSafeClient, Choice, Score, Noul
 from src.config import TYPESAFE_API_KEY, MAX_STEPS_PER_COMMAND, STEP_PAUSE_SECONDS, TEMP_DIR
 from src.core.os_controller import OSController
 from src.core.app_resolver import WindowsAppResolver
 from src.core.accessibility_scanner import accessibility_scanner, UIElement
-from src.core.tool_result import ToolResult, FailureReason
+from src.core.tool_result import ToolResult, FailureReason, VerificationStatus
 from src.core.observation import Observation
 from src.core.goal_result import GoalResult
+from src.core.session_state import session_state, SessionState
 from src.verification import (
     VerificationResult,
     Verifier,
@@ -21,8 +27,26 @@ from src.verification import (
     SearchVerifier,
 )
 from src.runtime.agent_runtime import AgentRuntime
-import pyautogui
-import pyperclip
+from src.tools import (
+    tool_registry,
+    BaseTool,
+    AppLaunchTool,
+    ClickUIElementTool,
+    TypeTextTool,
+    InAppSearchTool,
+    WebNavigationTool,
+    GoogleSearchTool,
+    YouTubeMusicTool,
+    YouTubeTool,
+    SpotifyTool,
+    AnghamiTool,
+    SoundCloudTool,
+    MediaPlaybackTool,
+    VolumeTool,
+    WindowManagementTool,
+    DocumentShortcutTool,
+    MathCalculateTool,
+)
 
 KNOWN_SITES = {
     # Tech & Development
@@ -46,6 +70,7 @@ KNOWN_SITES = {
     "انغامي": "https://play.anghami.com",
     "أنغامي": "https://play.anghami.com",
     "انغام": "https://play.anghami.com",
+    "أنغام": "https://play.anghami.com",
     "soundcloud": "https://soundcloud.com",
     "ساوندكلاود": "https://soundcloud.com",
     "ساوند كلاود": "https://soundcloud.com",
@@ -106,23 +131,13 @@ KNOWN_SITES = {
     "جي ميل": "https://mail.google.com",
 }
 
-def find_top_youtube_video_id(query: str, timeout: float = 2.5) -> str:
-    """Fast network lookup to get the exact #1 YouTube/YouTube Music video ID."""
-    try:
-        q = urllib.parse.quote(query)
-        url = f"https://www.youtube.com/results?search_query={q}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        html = urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8")
-        video_ids = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
-        seen = set()
-        for vid in video_ids:
-            if vid not in seen:
-                return vid
-    except Exception:
-        pass
-    return ""
 
 class JevDecisionEngine:
+    """
+    Main cognitive orchestrator: decomposes compound goals, selects tools via fast-path
+    or TypeSafe AI System One model, and executes them in an Agentic Runtime loop.
+    """
+
     def __init__(self, os_controller: OSController):
         self.controller = os_controller
         self.app_resolver = WindowsAppResolver()
@@ -136,6 +151,10 @@ class JevDecisionEngine:
         self.text_verifier = TextVerifier()
         self.ui_verifier = UIElementVerifier()
         self.search_verifier = SearchVerifier()
+
+        # Tools and Session State (Phase 2 & 3)
+        self.tools = tool_registry
+        self.session_state = session_state
 
     def _get_active_window_info(self) -> str:
         try:
@@ -166,7 +185,7 @@ class JevDecisionEngine:
         raw_target = m.group(1).strip()
         raw_target = re.sub(r'^(?:موقع|صفحة|صفحه|لموقع)\s+', '', raw_target).strip()
         clean_target = re.sub(r'\b(في\s+جوجل|من\s+جوجل|عل[يى]\s+جوجل|in\s+google|on\s+google)\b', '', raw_target).strip()
-        
+
         if not clean_target:
             return None
 
@@ -187,7 +206,7 @@ class JevDecisionEngine:
             url = clean_target if clean_target.startswith("http") else f"https://{clean_target}"
             return {"type": "direct_url", "url": url, "target": clean_target}
 
-        # 3. Fallback to Google Search for the site
+        # 3. Fallback to Google Search for the site with autonomous navigation
         url = f"https://www.google.com/search?q={urllib.parse.quote(clean_target)}"
         return {"type": "search_site", "url": url, "target": clean_target}
 
@@ -200,7 +219,10 @@ class JevDecisionEngine:
         norm = g.lower()
 
         # Check if this is a standalone playback/resume command
-        standalone_playback = any(norm == cmd for cmd in ["شغل", "شغل الاغنيه", "شغل الاغنية", "شغل الموسيقى", "شغل الموسيقي", "شغل التراك", "play", "play music", "resume"])
+        standalone_playback = any(
+            norm == cmd
+            for cmd in ["شغل", "شغل الاغنيه", "شغل الاغنية", "شغل الموسيقى", "شغل الموسيقي", "شغل التراك", "play", "play music", "resume"]
+        )
         if standalone_playback:
             return [norm], False
 
@@ -219,7 +241,8 @@ class JevDecisionEngine:
             # 3. Split on secondary 'و' followed by action verbs
             sub_splits = re.split(
                 r'\s+و(?=(?:افتح|اكتب|اضغط|دوس|انقر|احفظ|اقفل|دور|سيرش|ابحث|شغل|خش\s*عل[يى]|ادخل\s*عل[يى]|روح\s*ل|type|click|save|open|launch|search|go\s*to))\s*',
-                p, flags=re.IGNORECASE
+                p,
+                flags=re.IGNORECASE,
             )
             for s in sub_splits:
                 s_clean = s.strip()
@@ -254,22 +277,30 @@ class JevDecisionEngine:
         # 1. Remove platform mentions
         c = re.sub(
             r'\b(يوتيوب\s+ميوز[كي]|youtube\s+music|يوتيوب|اليوتيوب|youtube|سبوتيفاي|سبوتفاي|سبويتي\s*فاي|spotify|أنغامي|انغامي|anghami|ساوند\s*كلاود|soundcloud|جوجل|google|كروم|chrome|المتصفح|browser)\b',
-            '', c, flags=re.IGNORECASE
+            '',
+            c,
+            flags=re.IGNORECASE,
         )
         # 2. Remove command and action verbs
         c = re.sub(
             r'\b(?:و)?(?:سيرش|ابحث|دور|شغل|شغلي|اسمعني|افتح|هاتلي|اسمع|search|play|open|find)\b',
-            '', c, flags=re.IGNORECASE
+            '',
+            c,
+            flags=re.IGNORECASE,
         )
         # 3. Remove entity type descriptors
         c = re.sub(
             r'\b(?:و)?(?:اغني[ةه]|أغني[ةه]|تراك|موسيقى|موسيقي|مغني|الفنان|كليب|فيديو|song|track|music|artist|video)\b',
-            '', c, flags=re.IGNORECASE
+            '',
+            c,
+            flags=re.IGNORECASE,
         )
         # 4. Remove grammatical prepositions and fillers
         c = re.sub(
             r'\b(في|عل[يى]|غلي|عن|من|بتاع|بتاعه|بتاعة|بتاعت|in|on|at|for|by|to|about|of)\b',
-            '', c, flags=re.IGNORECASE
+            '',
+            c,
+            flags=re.IGNORECASE,
         )
         clean_query = re.sub(r'\s+', ' ', c).strip()
 
@@ -285,7 +316,7 @@ class JevDecisionEngine:
         in a verified Agentic Loop with strict failure propagation.
         """
         self.controller.stop_requested = False
-        
+
         # Save to history log
         try:
             with open(TEMP_DIR / "history.log", "a", encoding="utf-8") as f:
@@ -293,7 +324,10 @@ class JevDecisionEngine:
         except Exception:
             pass
 
-        steps, global_auto_play = self._decompose_into_steps(goal_arabic)
+        # Contextual pronoun resolution (e.g. 'اقفله', 'احفظه', 'شغل غيرها')
+        resolved_goal = self.session_state.resolve_contextual_query(goal_arabic)
+
+        steps, global_auto_play = self._decompose_into_steps(resolved_goal)
         total_steps = len(steps)
 
         if total_steps > 1:
@@ -305,7 +339,15 @@ class JevDecisionEngine:
         for idx, step_text in enumerate(steps, 1):
             if self.controller.stop_requested:
                 msg = "Operation stopped by user."
-                res = ToolResult(success=False, tool="emergency_stop", message=msg, error=msg, retryable=False)
+                res = ToolResult(
+                    success=False,
+                    tool="emergency_stop",
+                    message=msg,
+                    error=msg,
+                    retryable=False,
+                    execution_success=False,
+                    verification_status=VerificationStatus.FAILED,
+                )
                 step_results.append(res)
                 self.runtime.record_goal_outcome(False)
                 return GoalResult(success=False, goal=goal_arabic, steps=step_results, message=msg)
@@ -317,6 +359,17 @@ class JevDecisionEngine:
 
             result = self._execute_single_step(step_text, idx, total_steps, global_auto_play, on_step_callback)
             step_results.append(result)
+
+            # Record turn in sliding session state
+            platform, _ = self._extract_clean_entities(step_text)
+            self.session_state.record_turn(
+                goal=step_text,
+                action=result.tool,
+                target=result.data.get("target") or result.data.get("query") or result.data.get("text") if isinstance(result.data, dict) else str(result.data or ""),
+                platform=platform,
+                window_title=self._get_active_window_info(),
+                success=result.success,
+            )
 
             # Failure Propagation: If any step fails, do NOT proceed blindly!
             if not result.success:
@@ -346,120 +399,156 @@ class JevDecisionEngine:
     def _execute_single_step(
         self, step_goal: str, step_idx: int, total_steps: int, auto_play_override: bool = False, on_step_callback=None
     ) -> ToolResult:
-        """Executes an atomic sub-task via the AgentRuntime with explicit verifications."""
+        """Executes an atomic sub-task via the AgentRuntime with real computer observations and verifications."""
         norm_goal = self.scanner._normalize_text(step_goal)
 
         # -------------------------------------------------------------
         # 1. Global Media Controls (Play / Pause / Next / Prev)
         # -------------------------------------------------------------
         if any(w in norm_goal for w in ["وقف الاغنيه", "وقف الموسيقي", "وقف التراك", "وقف", "ايقاف", "pause music", "pause song", "pause"]):
+            tool = self.tools["media_playback"]
             return self.runtime.execute_step(
                 action="media_pause",
-                target="media_playback",
-                execute_fn=lambda: (self.controller.press_key("playpause"), ToolResult(success=True, tool="media_pause", message="Media playback paused."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="media_pause",
+                execute_fn=lambda: tool.execute("media_pause"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if norm_goal in ["شغل الاغنيه", "كمل الاغنيه", "شغل الموسيقي", "كمل", "استئناف", "resume", "resume music", "play music"]:
+            tool = self.tools["media_playback"]
             return self.runtime.execute_step(
                 action="media_resume",
-                target="media_playback",
-                execute_fn=lambda: (self.controller.press_key("playpause"), ToolResult(success=True, tool="media_resume", message="Media playback resumed."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="media_resume",
+                execute_fn=lambda: tool.execute("media_resume"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(w in norm_goal for w in ["بعدها", "بعده", "التالي", "التاليه", "نكست", "next song", "next track", "next", "skip"]):
+            tool = self.tools["media_playback"]
             return self.runtime.execute_step(
                 action="media_next",
-                target="next_track",
-                execute_fn=lambda: (self.controller.press_key("nexttrack"), ToolResult(success=True, tool="media_next", message="Skipped to next track."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="media_next",
+                execute_fn=lambda: tool.execute("media_next"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(w in norm_goal for w in ["قبلها", "قبله", "السابق", "السابقه", "بريفيوس", "previous song", "prev track", "previous", "prev", "back"]):
+            tool = self.tools["media_playback"]
             return self.runtime.execute_step(
                 action="media_prev",
-                target="prev_track",
-                execute_fn=lambda: (self.controller.press_key("prevtrack"), ToolResult(success=True, tool="media_prev", message="Returned to previous track."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="media_prev",
+                execute_fn=lambda: tool.execute("media_prev"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # -------------------------------------------------------------
         # 2. Window & System Management (Close, Minimize, Volume, Shortcuts)
         # -------------------------------------------------------------
         if any(norm_goal == cmd for cmd in ["اقفل النافذة", "اقفل البرنامج", "اغلق النافذة", "اغلق البرنامج", "قفل النافذة", "اقفل", "قفل", "close window", "close app"]):
+            tool = self.tools["window_management"]
             return self.runtime.execute_step(
                 action="close_window",
-                target="active_window",
-                execute_fn=lambda: (self.controller.hotkey(["alt", "f4"]), ToolResult(success=True, tool="close_window", message="Closed active window."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="close",
+                execute_fn=lambda: tool.execute("close"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(norm_goal == cmd for cmd in ["نزل كل النوافذ", "صغر كل النوافذ", "سطح المكتب", "هات سطح المكتب", "هات الديسك توب", "minimize all", "show desktop"]):
+            tool = self.tools["window_management"]
             return self.runtime.execute_step(
                 action="minimize_all",
-                target="desktop",
-                execute_fn=lambda: (self.controller.hotkey(["win", "d"]), ToolResult(success=True, tool="minimize_all", message="Minimized all windows."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="minimize_all",
+                execute_fn=lambda: tool.execute("minimize_all"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(norm_goal == cmd for cmd in ["احفظ الملف", "احفظ", "سيف", "save file", "save"]):
+            tool = self.tools["document_shortcut"]
             return self.runtime.execute_step(
                 action="save_file",
-                target="active_document",
-                execute_fn=lambda: (self.controller.hotkey(["ctrl", "s"]), ToolResult(success=True, tool="save_file", message="Saved document (Ctrl + S)."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="save",
+                execute_fn=lambda: tool.execute("save"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(norm_goal == cmd for cmd in ["انسخ", "كوبي", "copy"]):
+            tool = self.tools["document_shortcut"]
             return self.runtime.execute_step(
                 action="copy",
-                target="clipboard",
-                execute_fn=lambda: (self.controller.hotkey(["ctrl", "c"]), ToolResult(success=True, tool="copy", message="Copied to clipboard."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="copy",
+                execute_fn=lambda: tool.execute("copy"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(norm_goal == cmd for cmd in ["الصق", "بيست", "paste"]):
+            tool = self.tools["document_shortcut"]
             return self.runtime.execute_step(
                 action="paste",
-                target="clipboard",
-                execute_fn=lambda: (self.controller.hotkey(["ctrl", "v"]), ToolResult(success=True, tool="paste", message="Pasted from clipboard."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="paste",
+                execute_fn=lambda: tool.execute("paste"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(norm_goal == cmd for cmd in ["حدد الكل", "سلكت اول", "select all"]):
+            tool = self.tools["document_shortcut"]
             return self.runtime.execute_step(
                 action="select_all",
-                target="document",
-                execute_fn=lambda: (self.controller.hotkey(["ctrl", "a"]), ToolResult(success=True, tool="select_all", message="Selected all."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                target="select_all",
+                execute_fn=lambda: tool.execute("select_all"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(w in norm_goal for w in ["علي الصوت", "ارفع الصوت", "زي الصوت", "volume up", "raise volume", "increase volume"]):
-            def _vol_up():
-                for _ in range(5):
-                    self.controller.press_key("volumeup")
-                return ToolResult(success=True, tool="volume_up", message="Increased system volume.")
+            tool = self.tools["volume_control"]
             return self.runtime.execute_step(
-                action="volume_up", target="system_volume", execute_fn=_vol_up,
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="volume_up",
+                target="volume_up",
+                execute_fn=lambda: tool.execute("volume_up"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(w in norm_goal for w in ["وطي الصوت", "اخفض الصوت", "نزل الصوت", "volume down", "lower volume", "decrease volume"]):
-            def _vol_down():
-                for _ in range(5):
-                    self.controller.press_key("volumedown")
-                return ToolResult(success=True, tool="volume_down", message="Decreased system volume.")
+            tool = self.tools["volume_control"]
             return self.runtime.execute_step(
-                action="volume_down", target="system_volume", execute_fn=_vol_down,
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="volume_down",
+                target="volume_down",
+                execute_fn=lambda: tool.execute("volume_down"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         if any(w in norm_goal for w in ["اكتم الصوت", "ميوت", "mute"]):
+            tool = self.tools["volume_control"]
             return self.runtime.execute_step(
-                action="volume_mute", target="system_volume",
-                execute_fn=lambda: (self.controller.press_key("volumemute"), ToolResult(success=True, tool="volume_mute", message="Toggled system mute."))[1],
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="volume_mute",
+                target="volume_mute",
+                execute_fn=lambda: tool.execute("volume_mute"),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # -------------------------------------------------------------
@@ -469,26 +558,15 @@ class JevDecisionEngine:
         if nav_res:
             url = nav_res["url"]
             target_name = nav_res["target"]
-
-            def _exec_nav():
-                import subprocess
-                subprocess.Popen(f'start "" "{url}"', shell=True)
-                self.controller.wait(0.8)
-                return ToolResult(success=True, tool="web_navigation", message=f"Opened '{target_name}' in browser.", data={"url": url})
-
-            def _obs_nav():
-                return Observation(
-                    source="browser",
-                    description=f"Navigated to '{url}'",
-                    data={"url_opened": True, "submitted": True, "target": target_name}
-                )
+            is_search_site = (nav_res.get("type") == "search_site")
+            tool = self.tools["web_navigation"]
 
             return self.runtime.execute_step(
                 action="web_navigation",
                 target=target_name,
-                execute_fn=_exec_nav,
-                observer_fn=_obs_nav,
-                verifier=self.search_verifier,
+                execute_fn=lambda: tool.execute(target_name, url=url, is_search_site=is_search_site),
+                observer_fn=lambda: tool.observe(target_name),
+                verifier=tool.get_verifier(),
                 expected=target_name,
                 step_idx=step_idx,
                 total_steps=total_steps,
@@ -503,86 +581,62 @@ class JevDecisionEngine:
 
         # A. YouTube Music
         if platform == "youtube_music":
-            def _exec_ytm():
-                video_id = ""
-                if should_play:
-                    video_id = find_top_youtube_video_id(clean_query + " audio") or find_top_youtube_video_id(clean_query)
-                if video_id:
-                    url = f"https://music.youtube.com/watch?v={video_id}"
-                    import subprocess
-                    subprocess.Popen(f'start "" "{url}"', shell=True)
-                    msg = f"Playing '{clean_query}' on YouTube Music."
-                else:
-                    url = f"https://music.youtube.com/search?q={urllib.parse.quote(clean_query)}"
-                    import subprocess
-                    subprocess.Popen(f'start "" "{url}"', shell=True)
-                    msg = f"Opened YouTube Music search for '{clean_query}'."
-                return ToolResult(success=True, tool="youtube_music", message=msg, data={"url": url, "video_id": video_id})
-
-            def _obs_ytm():
-                return Observation(source="browser", description=f"YouTube Music loaded query '{clean_query}'", data={"submitted": True, "url_opened": True})
-
+            tool = self.tools["youtube_music"]
             return self.runtime.execute_step(
-                action="youtube_music", target=clean_query, execute_fn=_exec_ytm, observer_fn=_obs_ytm,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="youtube_music",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query, should_play=should_play),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # B. YouTube Videos
         if platform == "youtube":
-            def _exec_yt():
-                video_id = ""
-                if should_play:
-                    video_id = find_top_youtube_video_id(clean_query)
-                if video_id:
-                    url = f"https://www.youtube.com/watch?v={video_id}"
-                    import subprocess
-                    subprocess.Popen(f'start "" "{url}"', shell=True)
-                    msg = f"Playing '{clean_query}' on YouTube."
-                else:
-                    url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(clean_query)}"
-                    import subprocess
-                    subprocess.Popen(f'start "" "{url}"', shell=True)
-                    msg = f"Opened YouTube search for '{clean_query}'."
-                return ToolResult(success=True, tool="youtube", message=msg, data={"url": url, "video_id": video_id})
-
-            def _obs_yt():
-                return Observation(source="browser", description=f"YouTube loaded query '{clean_query}'", data={"submitted": True, "url_opened": True})
-
+            tool = self.tools["youtube"]
             return self.runtime.execute_step(
-                action="youtube", target=clean_query, execute_fn=_exec_yt, observer_fn=_obs_yt,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="youtube",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query, should_play=should_play),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # C. Anghami
         if platform == "anghami":
-            def _exec_anghami():
-                url = f"https://play.anghami.com/search?query={urllib.parse.quote(clean_query)}"
-                import subprocess
-                subprocess.Popen(f'start "" "{url}"', shell=True)
-                return ToolResult(success=True, tool="anghami", message=f"Opened Anghami search for '{clean_query}'.", data={"url": url})
-
-            def _obs_anghami():
-                return Observation(source="browser", description=f"Anghami search for '{clean_query}'", data={"submitted": True, "url_opened": True})
-
+            tool = self.tools["anghami"]
             return self.runtime.execute_step(
-                action="anghami", target=clean_query, execute_fn=_exec_anghami, observer_fn=_obs_anghami,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="anghami",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # D. SoundCloud
         if platform == "soundcloud":
-            def _exec_soundcloud():
-                url = f"https://soundcloud.com/search?q={urllib.parse.quote(clean_query)}"
-                import subprocess
-                subprocess.Popen(f'start "" "{url}"', shell=True)
-                return ToolResult(success=True, tool="soundcloud", message=f"Opened SoundCloud search for '{clean_query}'.", data={"url": url})
-
-            def _obs_soundcloud():
-                return Observation(source="browser", description=f"SoundCloud search for '{clean_query}'", data={"submitted": True, "url_opened": True})
-
+            tool = self.tools["soundcloud"]
             return self.runtime.execute_step(
-                action="soundcloud", target=clean_query, execute_fn=_exec_soundcloud, observer_fn=_obs_soundcloud,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="soundcloud",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # E. Spotify Auto-Play / Search
@@ -591,50 +645,24 @@ class JevDecisionEngine:
         )
 
         if is_music_intent:
-            def _exec_spotify():
-                self.app_resolver.launch("spotify")
-                self.controller.wait(0.8)
-                try:
-                    import uiautomation as auto
-                    with auto.UIAutomationInitializerInThread():
-                        spotify_win = auto.WindowControl(searchDepth=1, SubName="Spotify")
-                        if spotify_win.Exists(maxSearchSeconds=1.5):
-                            spotify_win.SetActive()
-                            spotify_win.SetFocus()
-                except Exception:
-                    pass
-
-                pyautogui.hotkey("ctrl", "k")
-                time.sleep(0.2)
-                pyperclip.copy(clean_query)
-                pyautogui.hotkey("ctrl", "v")
-                time.sleep(0.4)
-
-                if should_play:
-                    pyautogui.press("down")
-                    time.sleep(0.15)
-                    pyautogui.press("enter")
-                    time.sleep(0.3)
-                    msg = f"Playing '{clean_query}' on Spotify."
-                else:
-                    pyautogui.press("enter")
-                    msg = f"Searched for '{clean_query}' on Spotify."
-
-                return ToolResult(success=True, tool="spotify", message=msg, data={"query": clean_query, "auto_play": should_play})
-
-            def _obs_spotify():
-                return Observation(source="spotify", description=f"Spotify query executed for '{clean_query}'", data={"submitted": True, "window_found": True})
-
+            tool = self.tools["spotify"]
             return self.runtime.execute_step(
-                action="spotify", target=clean_query, execute_fn=_exec_spotify, observer_fn=_obs_spotify,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="spotify",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query, should_play=should_play),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # -------------------------------------------------------------
-        # 3. Active Window UI Automation Tree Scan & Local Fast-Path
+        # 5. Active Window UI Automation Tree Scan & Local Fast-Path
         # -------------------------------------------------------------
         window_title, ui_elements = self.scanner.scan_active_window(max_elements=40)
-        
+
         is_explicit_ui_click = any(w in norm_goal for w in [
             "اضغط", "انقر", "دوس", "زر", "زرار", "قائمه", "تبويب", "تاب", "click", "press", "tab", "menu"
         ])
@@ -648,22 +676,22 @@ class JevDecisionEngine:
                 if on_step_callback:
                     on_step_callback("thought", thought)
 
-                def _exec_fast_click():
-                    clicked = self.scanner.click_element(target_elem)
-                    if clicked:
-                        return ToolResult(success=True, tool="click_ui_element", message=f"Clicked '{target_elem.name}' successfully.", data=target_elem.to_dict())
-                    return ToolResult(success=False, tool="click_ui_element", error=f"Failed to click '{target_elem.name}'", retryable=True, failure_reason=FailureReason.NOT_FOUND)
-
-                def _obs_fast_click():
-                    return Observation(source="uia", description=f"Clicked '{target_elem.name}' in '{window_title}'", data={"action_performed": True, "element_found": True})
-
+                tool = self.tools["click_ui_element"]
                 return self.runtime.execute_step(
-                    action="click_ui_element", target=target_elem.name, execute_fn=_exec_fast_click, observer_fn=_obs_fast_click,
-                    verifier=self.ui_verifier, expected=target_elem.name, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                    action="click_ui_element",
+                    target=target_elem.name,
+                    execute_fn=lambda: tool.execute(target_elem.name, ui_elements=ui_elements),
+                    observer_fn=lambda: tool.observe(target_elem.name),
+                    verifier=tool.get_verifier(),
+                    expected=target_elem.name,
+                    reobserve_fn=tool.reobserve,
+                    step_idx=step_idx,
+                    total_steps=total_steps,
+                    on_step_callback=on_step_callback,
                 )
 
         # -------------------------------------------------------------
-        # 4. Jev System One Decision Engine (TypeSafe AI)
+        # 6. Jev System One Decision Engine (TypeSafe AI)
         # -------------------------------------------------------------
         print("[THINKING] Calling Jev Decision Model (TypeSafe AI)...")
         if on_step_callback:
@@ -697,8 +725,8 @@ class JevDecisionEngine:
                             "math_calculate": "Calculate a math expression or type numbers into calculator",
                             "keyboard_shortcut": "Execute shortcut like copy, paste, select all, close window, minimize",
                             "volume_control": "Increase, decrease, or mute system audio volume",
-                            "finish": "Goal is already complete"
-                        }
+                            "finish": "Goal is already complete",
+                        },
                     ),
                     "target_app": Choice(
                         instructions="Which specific application or tool is targeted?",
@@ -718,8 +746,8 @@ class JevDecisionEngine:
                             "discord": "Discord",
                             "telegram": "Telegram",
                             "whatsapp": "WhatsApp",
-                            "none": "Other app or current active app"
-                        }
+                            "none": "Other app or current active app",
+                        },
                     ),
                     "shortcut_type": Choice(
                         instructions="If a shortcut is needed, which one?",
@@ -732,10 +760,10 @@ class JevDecisionEngine:
                             "paste": "Ctrl + V",
                             "select_all": "Ctrl + A",
                             "save": "Ctrl + S",
-                            "none": "No shortcut"
-                        }
-                    )
-                }
+                            "none": "No shortcut",
+                        },
+                    ),
+                },
             )
 
             latency_ms = int((time.time() - start_time) * 1000)
@@ -746,8 +774,13 @@ class JevDecisionEngine:
             if on_step_callback:
                 on_step_callback("error", err_msg)
             return ToolResult(
-                success=False, tool="jev_decision", error=err_msg,
-                failure_reason=FailureReason.EXECUTION_ERROR, retryable=False
+                success=False,
+                tool="jev_decision",
+                error=err_msg,
+                failure_reason=FailureReason.EXECUTION_ERROR,
+                execution_success=False,
+                verification_status=VerificationStatus.FAILED,
+                retryable=False,
             )
 
         action = jev_response.answers["primary_action"].choice
@@ -761,183 +794,157 @@ class JevDecisionEngine:
             on_step_callback("thought", thought)
 
         if self.controller.stop_requested:
-            return ToolResult(success=False, tool="emergency_stop", error="Operation stopped by user.", retryable=False)
+            return ToolResult(
+                success=False,
+                tool="emergency_stop",
+                error="Operation stopped by user.",
+                retryable=False,
+                execution_success=False,
+                verification_status=VerificationStatus.FAILED,
+            )
 
         # -------------------------------------------------------------
-        # 5. Verified Action Execution via AgentRuntime
+        # 7. Verified Action Execution via AgentRuntime & Tool Registry
         # -------------------------------------------------------------
         if action == "launch_app":
             app_query = target_app if target_app != "none" else step_goal
-
-            def _exec_launch():
-                ok, l_msg = self.app_resolver.launch(app_query)
-                if ok:
-                    return ToolResult(success=True, tool="launch_app", message=l_msg)
-                return ToolResult(success=False, tool="launch_app", error=l_msg, retryable=False, failure_reason=FailureReason.NOT_FOUND)
-
-            def _obs_launch():
-                self.controller.wait(0.8)
-                win_title, _ = self.scanner.scan_active_window(max_elements=10)
-                return Observation(
-                    source="window",
-                    description=f"Active window: '{win_title}'",
-                    data={"window_title": win_title, "window_found": True, "process_exists": True}
-                )
-
+            tool = self.tools["launch_app"]
             return self.runtime.execute_step(
-                action="launch_app", target=app_query, execute_fn=_exec_launch, observer_fn=_obs_launch,
-                verifier=self.app_verifier, expected=app_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="launch_app",
+                target=app_query,
+                execute_fn=lambda: tool.execute(app_query),
+                observer_fn=lambda: tool.observe(app_query),
+                verifier=tool.get_verifier(),
+                expected=app_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "type_text":
             text_to_type = clean_query
-
-            def _exec_type():
-                _, cur_elements = self.scanner.scan_active_window(max_elements=30)
-                editor_elem = next((e for e in cur_elements if e.control_type in ("Edit", "Document")), None)
-                if editor_elem:
-                    typed = self.scanner.type_into_element(editor_elem, text_to_type)
-                    if typed:
-                        return ToolResult(success=True, tool="type_text", message=f"Typed: '{text_to_type}'", data={"text": text_to_type})
-                else:
-                    self.controller.type_arabic(text_to_type)
-                    return ToolResult(success=True, tool="type_text", message=f"Typed: '{text_to_type}'", data={"text": text_to_type})
-                return ToolResult(success=False, tool="type_text", error="Could not type into active window", retryable=True, failure_reason=FailureReason.APP_NOT_READY)
-
-            def _obs_type():
-                _, cur_elements = self.scanner.scan_active_window(max_elements=30)
-                editor_elem = next((e for e in cur_elements if e.control_type in ("Edit", "Document")), None)
-                observed_val = editor_elem.value if (editor_elem and editor_elem.value) else text_to_type
-                return Observation(source="uia", description=f"Observed text in editor: '{observed_val[:40]}'", data={"text": observed_val})
-
+            tool = self.tools["type_text"]
             return self.runtime.execute_step(
-                action="type_text", target=text_to_type, execute_fn=_exec_type, observer_fn=_obs_type,
-                verifier=self.text_verifier, expected=text_to_type, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="type_text",
+                target=text_to_type,
+                execute_fn=lambda: tool.execute(text_to_type),
+                observer_fn=lambda: tool.observe(text_to_type),
+                verifier=tool.get_verifier(),
+                expected=text_to_type,
+                reobserve_fn=tool.reobserve,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "click_ui_element":
+            tool = self.tools["click_ui_element"]
             match_res = self.scanner.find_best_match(step_goal, ui_elements)
             if not match_res:
                 return ToolResult(
-                    success=False, tool="click_ui_element", error="Requested UI element not found in active window.",
-                    failure_reason=FailureReason.NOT_FOUND, retryable=True
+                    success=False,
+                    tool="click_ui_element",
+                    error="Requested UI element not found in active window.",
+                    failure_reason=FailureReason.NOT_FOUND,
+                    execution_success=False,
+                    verification_status=VerificationStatus.FAILED,
+                    retryable=True,
                 )
             target_elem, conf = match_res
-
-            def _exec_click():
-                clicked = self.scanner.click_element(target_elem)
-                if clicked:
-                    return ToolResult(success=True, tool="click_ui_element", message=f"Clicked '{target_elem.name}' successfully.", data=target_elem.to_dict())
-                return ToolResult(success=False, tool="click_ui_element", error=f"Failed to click '{target_elem.name}'", retryable=True, failure_reason=FailureReason.NOT_FOUND)
-
-            def _obs_click():
-                return Observation(source="uia", description=f"Clicked element '{target_elem.name}'", data={"action_performed": True, "element_found": True})
-
             return self.runtime.execute_step(
-                action="click_ui_element", target=target_elem.name, execute_fn=_exec_click, observer_fn=_obs_click,
-                verifier=self.ui_verifier, expected=target_elem.name, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="click_ui_element",
+                target=target_elem.name,
+                execute_fn=lambda: tool.execute(target_elem.name, ui_elements=ui_elements),
+                observer_fn=lambda: tool.observe(target_elem.name),
+                verifier=tool.get_verifier(),
+                expected=target_elem.name,
+                reobserve_fn=tool.reobserve,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "in_app_search":
-            def _exec_in_app():
-                if target_app != "none" and target_app not in window_title.lower():
-                    self.app_resolver.launch(target_app)
-                    self.controller.wait(1.0)
-                ok, s_msg = self.scanner.universal_in_app_search(clean_query, auto_play=should_play)
-                return ToolResult(success=ok, tool="in_app_search", message=s_msg, data={"query": clean_query})
-
-            def _obs_in_app():
-                return Observation(source="app", description=f"In-app search performed for '{clean_query}'", data={"submitted": True, "results_loaded": True})
-
+            if target_app != "none" and target_app not in window_title.lower():
+                self.app_resolver.launch(target_app)
+                self.controller.wait(1.0)
+            tool = self.tools["in_app_search"]
             return self.runtime.execute_step(
-                action="in_app_search", target=clean_query, execute_fn=_exec_in_app, observer_fn=_obs_in_app,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="in_app_search",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query, auto_play=should_play),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "web_search":
-            def _exec_web():
-                url = f"https://www.google.com/search?q={urllib.parse.quote(clean_query)}"
-                import subprocess
-                subprocess.Popen(f'start "" "{url}"', shell=True)
-                self.controller.wait(0.8)
-                return ToolResult(success=True, tool="web_search", message=f"Opened Google search for '{clean_query}'.", data={"url": url})
-
-            def _obs_web():
-                return Observation(source="browser", description=f"Google search for '{clean_query}'", data={"submitted": True, "url_opened": True})
-
+            tool = self.tools["web_search"]
             return self.runtime.execute_step(
-                action="web_search", target=clean_query, execute_fn=_exec_web, observer_fn=_obs_web,
-                verifier=self.search_verifier, expected=clean_query, step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="web_search",
+                target=clean_query,
+                execute_fn=lambda: tool.execute(clean_query),
+                observer_fn=lambda: tool.observe(clean_query),
+                verifier=tool.get_verifier(),
+                expected=clean_query,
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "math_calculate":
-            def _exec_calc():
-                import subprocess
-                subprocess.Popen("start calc", shell=True)
-                self.controller.wait(0.8)
-                math_text = re.sub(r'[^\d\+\-\*\/\.\(\)\=]', '', step_goal)
-                if math_text:
-                    self.controller.type_arabic(math_text)
-                    self.controller.press_key("enter")
-                return ToolResult(success=True, tool="math_calculate", message="Opened Calculator and evaluated expression.")
-
+            tool = self.tools["math_calculate"]
             return self.runtime.execute_step(
-                action="math_calculate", target="calc", execute_fn=_exec_calc,
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="math_calculate",
+                target=step_goal,
+                execute_fn=lambda: tool.execute(step_goal),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "keyboard_shortcut":
-            def _exec_shortcut():
-                if shortcut == "close_window":
-                    self.controller.hotkey(["alt", "f4"])
-                    m = "Closed window."
-                elif shortcut == "minimize_all":
-                    self.controller.hotkey(["win", "d"])
-                    m = "Minimized all windows."
-                elif shortcut == "copy":
-                    self.controller.hotkey(["ctrl", "c"])
-                    m = "Copied to clipboard."
-                elif shortcut == "paste":
-                    self.controller.hotkey(["ctrl", "v"])
-                    m = "Pasted from clipboard."
-                elif shortcut == "select_all":
-                    self.controller.hotkey(["ctrl", "a"])
-                    m = "Selected all."
-                elif shortcut == "save":
-                    self.controller.hotkey(["ctrl", "s"])
-                    m = "Saved document (Ctrl + S)."
-                elif shortcut == "enter":
-                    self.controller.press_key("enter")
-                    m = "Pressed Enter."
-                else:
-                    self.controller.press_key(shortcut)
-                    m = f"Executed shortcut: {shortcut}."
-                return ToolResult(success=True, tool="keyboard_shortcut", message=m)
+            if shortcut in ("close_window", "minimize_all"):
+                tool = self.tools["window_management"]
+                target_cmd = "close" if shortcut == "close_window" else "minimize_all"
+            else:
+                tool = self.tools["document_shortcut"]
+                target_cmd = shortcut
 
             return self.runtime.execute_step(
-                action="keyboard_shortcut", target=shortcut, execute_fn=_exec_shortcut,
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="keyboard_shortcut",
+                target=shortcut,
+                execute_fn=lambda: tool.execute(target_cmd),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         elif action == "volume_control":
-            def _exec_vol():
-                if any(w in norm_goal for w in ["علي", "ارفع", "up", "raise", "increase"]):
-                    for _ in range(5):
-                        self.controller.press_key("volumeup")
-                    m = "Increased system volume."
-                elif any(w in norm_goal for w in ["وطي", "اخفض", "down", "lower", "decrease"]):
-                    for _ in range(5):
-                        self.controller.press_key("volumedown")
-                    m = "Decreased system volume."
-                else:
-                    self.controller.press_key("volumemute")
-                    m = "Toggled system mute."
-                return ToolResult(success=True, tool="volume_control", message=m)
+            tool = self.tools["volume_control"]
+            if any(w in norm_goal for w in ["علي", "ارفع", "up", "raise", "increase"]):
+                target_vol = "volume_up"
+            elif any(w in norm_goal for w in ["وطي", "اخفض", "down", "lower", "decrease"]):
+                target_vol = "volume_down"
+            else:
+                target_vol = "volume_mute"
 
             return self.runtime.execute_step(
-                action="volume_control", target="system_volume", execute_fn=_exec_vol,
-                step_idx=step_idx, total_steps=total_steps, on_step_callback=on_step_callback
+                action="volume_control",
+                target=target_vol,
+                execute_fn=lambda: tool.execute(target_vol),
+                step_idx=step_idx,
+                total_steps=total_steps,
+                on_step_callback=on_step_callback,
             )
 
         # Default fallback
-        return ToolResult(success=True, tool="finish", message="Step completed.")
+        return ToolResult(
+            success=True,
+            tool="finish",
+            message="Step completed.",
+            verification_status=VerificationStatus.UNAVAILABLE,
+        )
