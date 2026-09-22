@@ -6,12 +6,35 @@ and universal in-app search & interaction across ANY Windows desktop application
 
 import time
 import re
+import os
 import functools
+import ctypes
+from ctypes import wintypes
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any
 import uiautomation as auto
 import pyautogui
 import pyperclip
+
+def get_process_name_by_pid(pid: int) -> str:
+    """Resolves running executable name for a given Process ID using Win32 API."""
+    if not pid or pid <= 0:
+        return ""
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    try:
+        h_process = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h_process:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(1024)
+            if ctypes.windll.kernel32.QueryFullProcessImageNameW(h_process, 0, buf, ctypes.byref(size)):
+                return os.path.basename(buf.value)
+        finally:
+            ctypes.windll.kernel32.CloseHandle(h_process)
+    except Exception as e:
+        print(f"[DEBUG] Error querying process name for PID {pid}: {e}")
+    return ""
 
 def ensure_com_initialized(func):
     """Decorator ensuring UIAutomation COM apartment is initialized in the calling thread."""
@@ -204,7 +227,24 @@ class AccessibilityScanner:
 
         return None
 
+    @ensure_com_initialized
+    def get_active_window_details(self) -> Dict[str, Any]:
+        """
+        Gets details of active foreground window including title, Process ID, and executable name.
+        """
+        win = self.get_active_window()
+        if not win:
+            return {"title": "Desktop", "process_id": 0, "process_name": "", "found": False}
 
+        title = (win.Name or "").strip()
+        pid = getattr(win, "ProcessId", 0)
+        proc_name = get_process_name_by_pid(pid)
+        return {
+            "title": title or "Active Window",
+            "process_id": pid,
+            "process_name": proc_name,
+            "found": bool(title and title.lower() != "desktop"),
+        }
 
     @ensure_com_initialized
     def scan_active_window(

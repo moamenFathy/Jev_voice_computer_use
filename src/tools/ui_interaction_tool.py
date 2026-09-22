@@ -89,6 +89,7 @@ class ClickUIElementTool(BaseTool):
 class TypeTextTool(BaseTool):
     name = "type_text"
     description = "Types Arabic or English text into the active document or input field"
+    is_idempotent: bool = False
 
     def __init__(self, os_controller: Optional[OSController] = None, scanner=None):
         self.controller = os_controller or OSController()

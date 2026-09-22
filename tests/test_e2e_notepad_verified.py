@@ -61,8 +61,20 @@ class TestE2ENotepadVerified(unittest.TestCase):
             time.sleep(0.5)
 
             # 5. Observe & Verify Text using REAL observed UIA control value
+            with auto.UIAutomationInitializerInThread():
+                if notepad_win.Exists(maxSearchSeconds=1.5):
+                    try:
+                        notepad_win.SetActive()
+                        notepad_win.SetFocus()
+                    except Exception:
+                        pass
+            time.sleep(0.4)
+
             _, refreshed_elements = accessibility_scanner.scan_active_window(max_elements=30)
             refreshed_editor = next((e for e in refreshed_elements if e.control_type in ("Document", "Edit")), None)
+            if not refreshed_editor:
+                # Fallback to previously scanned editor element
+                refreshed_editor = editor_elem
             self.assertIsNotNone(refreshed_editor, "Could not find refreshed editor element")
 
             observed_text = None

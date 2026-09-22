@@ -14,11 +14,13 @@ from src.verification.verifier import Verifier
 class BaseTool(ABC):
     """
     Abstract base class for all JEV OS and Agent tools.
-    Every tool defines its execution, observation extraction, and default verifier.
+    Every tool defines its execution, observation extraction, default verifier,
+    and whether the action is idempotent (safe to repeat on retry).
     """
 
     name: str = "base_tool"
     description: str = "Base tool description"
+    is_idempotent: bool = True
 
     @abstractmethod
     def execute(self, target: str, **kwargs) -> ToolResult:

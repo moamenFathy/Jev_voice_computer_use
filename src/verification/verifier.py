@@ -15,9 +15,13 @@ from src.core.tool_result import VerificationStatus
 @dataclass
 class VerificationResult:
     verified: bool
-    status: VerificationStatus = VerificationStatus.UNAVAILABLE
+    status: Optional[VerificationStatus] = None
     message: str = ""
     evidence: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.status is None:
+            self.status = VerificationStatus.VERIFIED if self.verified else VerificationStatus.FAILED
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -69,20 +73,20 @@ class AppLaunchVerifier(Verifier):
                 evidence=evidence,
             )
 
-        # Canonical application alias mappings
+        # Canonical application alias and process executable mappings
         alias_matches = {
-            "notepad": ["notepad", "مفكرة", "المفكرة", "untitled - notepad", "بلا عنوان - المفكرة"],
-            "calculator": ["calculator", "حاسبة", "الحاسبة", "calc"],
-            "spotify": ["spotify", "سبوتيفاي", "سبوتفاي", "spotify free", "spotify premium"],
-            "rider": ["rider", "jetbrains rider"],
-            "code": ["visual studio code", "vscode", "code"],
-            "visual studio": ["visual studio", "devenv"],
-            "paint": ["paint", "الرسام", "untitled - paint"],
-            "chrome": ["google chrome", "chrome"],
-            "edge": ["microsoft edge", "edge"],
-            "discord": ["discord"],
-            "telegram": ["telegram"],
-            "whatsapp": ["whatsapp"],
+            "notepad": ["notepad", "notepad.exe", "مفكرة", "المفكرة", "untitled - notepad", "بلا عنوان - المفكرة"],
+            "calculator": ["calculator", "calculatorapp.exe", "calc.exe", "calculator.exe", "حاسبة", "الحاسبة", "calc"],
+            "spotify": ["spotify", "spotify.exe", "سبوتيفاي", "سبوتفاي", "spotify free", "spotify premium"],
+            "rider": ["rider", "rider64.exe", "jetbrains rider"],
+            "code": ["visual studio code", "code.exe", "vscode", "code"],
+            "visual studio": ["visual studio", "devenv.exe", "devenv"],
+            "paint": ["paint", "mspaint.exe", "الرسام", "untitled - paint"],
+            "chrome": ["google chrome", "chrome.exe", "chrome"],
+            "edge": ["microsoft edge", "msedge.exe", "edge"],
+            "discord": ["discord", "discord.exe"],
+            "telegram": ["telegram", "telegram.exe"],
+            "whatsapp": ["whatsapp", "whatsapp.exe"],
         }
 
         expected_aliases = [expected_clean]
@@ -99,14 +103,14 @@ class AppLaunchVerifier(Verifier):
             return VerificationResult(
                 verified=True,
                 status=VerificationStatus.VERIFIED,
-                message=f"Application window '{expected}' detected and verified (Window: '{obs_title}').",
+                message=f"Application window '{expected}' detected and verified (Window: '{obs_title}', Process: '{obs_process}').",
                 evidence=evidence,
             )
 
         return VerificationResult(
             verified=False,
             status=VerificationStatus.FAILED,
-            message=f"Expected app '{expected}' not found. Active window is '{obs_title}'.",
+            message=f"Expected app '{expected}' not found. Active window is '{obs_title}' (Process: '{obs_process}').",
             evidence=evidence,
         )
 
@@ -220,11 +224,13 @@ class SearchVerifier(Verifier):
     """
     Verifies that web navigation or in-app search reached an actual search/result state
     in the active browser or target application window.
+    Eliminates false positives from generic blank browser tabs or unrelated pages.
     """
 
     def verify(self, expected: str, observation: Observation) -> VerificationResult:
+        expected_clean = expected.lower().strip()
         data = observation.data or {}
-        obs_title = str(data.get("window_title", "")).lower()
+        obs_title = str(data.get("window_title", "")).lower().strip()
         browser_active = bool(data.get("browser_active", False))
         target_in_title = bool(data.get("target_in_title", False))
         results_loaded = bool(data.get("results_loaded", False))
@@ -238,11 +244,43 @@ class SearchVerifier(Verifier):
             "source": observation.source,
         }
 
-        # Real verification check: Target term in title, or results loaded, or browser active with query keywords
-        query_words = [w.lower() for w in expected.split() if len(w) > 2]
+        # 1. Reject generic blank/empty windows
+        generic_non_result_titles = ["desktop", "unknown", "new tab", "about:blank", "tab", ""]
+        if not obs_title or obs_title in generic_non_result_titles:
+            return VerificationResult(
+                verified=False,
+                status=VerificationStatus.FAILED,
+                message=f"No active search or browser window detected for '{expected}'.",
+                evidence=evidence,
+            )
+
+        if not expected_clean:
+            return VerificationResult(
+                verified=True,
+                status=VerificationStatus.VERIFIED,
+                message="Empty expected query trivially verified.",
+                evidence=evidence,
+            )
+
+        # 2. Extract significant query words
+        query_words = [w for w in expected_clean.split() if len(w) >= 2]
         query_in_title = any(qw in obs_title for qw in query_words) if query_words else False
 
-        if target_in_title or results_loaded or (browser_active and (query_in_title or "search" in obs_title or "google" in obs_title or "youtube" in obs_title or "anghami" in obs_title or "spotify" in obs_title)):
+        # 3. Known platform navigation domains / titles
+        platform_keywords = ["youtube", "spotify", "anghami", "soundcloud", "github", "chatgpt", "claude", "google", "search"]
+        expected_has_platform = any(pk in expected_clean for pk in platform_keywords)
+        title_has_platform = any(pk in obs_title for pk in platform_keywords)
+
+        # 4. Strict verification logic: Target terms in title, or query in title, or verified results loaded with query in title
+        if target_in_title or query_in_title or (expected_has_platform and title_has_platform):
+            return VerificationResult(
+                verified=True,
+                status=VerificationStatus.VERIFIED,
+                message=f"Search/Navigation for '{expected}' verified in window '{obs_title}'.",
+                evidence=evidence,
+            )
+
+        if browser_active and results_loaded and query_in_title:
             return VerificationResult(
                 verified=True,
                 status=VerificationStatus.VERIFIED,

@@ -42,13 +42,18 @@ class AppLaunchTool(BaseTool):
     def observe(self, target: str, **kwargs) -> Observation:
         import time
         time.sleep(0.8)
-        win_title, _ = accessibility_scanner.scan_active_window(max_elements=10)
+        details = accessibility_scanner.get_active_window_details()
+        win_title = details["title"]
+        proc_name = details["process_name"]
+        pid = details["process_id"]
         return Observation(
             source="window",
-            description=f"Active window: '{win_title}'",
+            description=f"Active window: '{win_title}' (Process: '{proc_name}', PID: {pid})",
             data={
                 "window_title": win_title,
-                "window_found": bool(win_title and win_title.lower() != "desktop"),
+                "process_name": proc_name,
+                "process_id": pid,
+                "window_found": details["found"],
             },
         )
 

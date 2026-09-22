@@ -157,8 +157,8 @@ class SpotifyTool(BaseTool):
                 if spotify_win.Exists(maxSearchSeconds=1.5):
                     spotify_win.SetActive()
                     spotify_win.SetFocus()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DEBUG] Notice on Spotify window activation: {e}")
 
         pyautogui.hotkey("ctrl", "k")
         time.sleep(0.2)
@@ -279,6 +279,7 @@ class SoundCloudTool(BaseTool):
 class MediaPlaybackTool(BaseTool):
     name = "media_playback"
     description = "Dispatches hardware Win32 multimedia keys (pause, resume, next, prev)"
+    is_idempotent: bool = False
 
     def __init__(self, os_controller: Optional[OSController] = None):
         self.controller = os_controller or OSController()

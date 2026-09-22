@@ -16,6 +16,7 @@ from src.verification.verifier import Verifier
 class VolumeTool(BaseTool):
     name = "volume_control"
     description = "Increases, decreases, or mutes master system volume"
+    is_idempotent: bool = False
 
     def __init__(self, os_controller: Optional[OSController] = None):
         self.controller = os_controller or OSController()
@@ -77,6 +78,7 @@ class WindowManagementTool(BaseTool):
 class DocumentShortcutTool(BaseTool):
     name = "document_shortcut"
     description = "Dispatches document editing hotkeys (save, copy, paste, select all, enter)"
+    is_idempotent: bool = False
 
     def __init__(self, os_controller: Optional[OSController] = None):
         self.controller = os_controller or OSController()
@@ -117,6 +119,7 @@ class DocumentShortcutTool(BaseTool):
 class MathCalculateTool(BaseTool):
     name = "math_calculate"
     description = "Opens Windows Calculator and computes mathematical expressions"
+    is_idempotent: bool = False
 
     def __init__(self, os_controller: Optional[OSController] = None):
         self.controller = os_controller or OSController()
