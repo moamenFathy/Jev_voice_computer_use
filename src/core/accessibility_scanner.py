@@ -1,16 +1,25 @@
 """
-Windows UI Automation (UIA) Accessibility Scanner & In-App Controller.
-Provides sub-second local UI tree inspection, bilingual element matching,
-and direct programmatic/coordinate interaction with native Windows controls.
+Windows UI Automation (UIA) Accessibility Scanner & Universal In-App Controller.
+Provides 100% thread-safe, sub-second local UI tree inspection, bilingual element matching,
+and universal in-app search & interaction across ANY Windows desktop application.
 """
 
 import time
 import re
+import functools
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any
 import uiautomation as auto
 import pyautogui
 import pyperclip
+
+def ensure_com_initialized(func):
+    """Decorator ensuring UIAutomation COM apartment is initialized in the calling thread."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with auto.UIAutomationInitializerInThread():
+            return func(*args, **kwargs)
+    return wrapper
 
 # Common Control Types to prioritize for interaction
 INTERACTIVE_CONTROL_TYPES = {
@@ -32,6 +41,49 @@ INTERACTIVE_CONTROL_TYPES = {
 
 # Bilingual synonyms dictionary (Arabic ↔ English UI terms)
 BILINGUAL_UI_SYNONYMS = {
+    # Lyrics / كلمات الأغاني
+    "كلمات": ["lyrics", "show lyrics", "كلمات", "كلمات الأغاني", "كلمات الاغاني"],
+    "الكلمات": ["lyrics", "show lyrics", "كلمات", "كلمات الأغاني", "كلمات الاغاني"],
+    "الكلامات": ["lyrics", "show lyrics", "كلمات", "كلمات الأغاني", "كلمات الاغاني"],
+    "كلامات": ["lyrics", "show lyrics", "كلمات"],
+    "ليركس": ["lyrics", "show lyrics"],
+    "ليريكس": ["lyrics", "show lyrics"],
+    "lyrics": ["lyrics", "show lyrics", "كلمات", "الكلمات"],
+
+    # Next / السابق / التالي
+    "التالي": ["next", "next track", "forward", "التالي"],
+    "التالية": ["next", "next track", "التالية"],
+    "نكست": ["next", "next track", "التالي"],
+    "النيكست": ["next", "next track", "التالي"],
+    "نيكست": ["next", "next track", "التالي"],
+    "بعدها": ["next", "next track"],
+    "البعدها": ["next", "next track"],
+    "اللي بعدها": ["next", "next track"],
+    "اللي بعده": ["next", "next track"],
+    "next": ["next", "next track", "التالي", "forward"],
+
+    # Previous / السابق
+    "السابق": ["back", "previous", "previous track", "السابق"],
+    "السابقة": ["back", "previous", "previous track", "السابقة"],
+    "بريفيوس": ["previous", "previous track", "السابق"],
+    "البريفيوس": ["previous", "previous track", "السابق"],
+    "قبلها": ["previous", "previous track"],
+    "القبلها": ["previous", "previous track"],
+    "اللي قبلها": ["previous", "previous track"],
+    "اللي قبله": ["previous", "previous track"],
+    "previous": ["previous", "previous track", "السابق", "back"],
+    "prev": ["previous", "previous track", "السابق"],
+    "رجوع": ["back", "previous", "رجوع"],
+
+    # Play / Pause
+    "تشغيل": ["play", "run", "start", "تشغيل"],
+    "بلاي": ["play"],
+    "ايقاف": ["pause", "stop", "ايقاف", "pause/resume"],
+    "إيقاف": ["pause", "stop", "إيقاف"],
+    "بوز": ["pause"],
+    "توقف": ["pause", "stop"],
+
+    # Common UI controls
     "حفظ": ["save", "حفظ", "save as"],
     "سيف": ["save", "save as"],
     "جديد": ["new", "جديد", "create"],
@@ -41,13 +93,8 @@ BILINGUAL_UI_SYNONYMS = {
     "تعديل": ["edit", "تعديل", "modify"],
     "تحرير": ["edit", "تحرير"],
     "عرض": ["view", "عرض"],
-    "بحث": ["search", "find", "بحث", "query"],
+    "بحث": ["search", "find", "بحث", "query", "filter"],
     "سيرش": ["search", "find"],
-    "تشغيل": ["play", "run", "start", "تشغيل"],
-    "بلاي": ["play"],
-    "ايقاف": ["pause", "stop", "ايقاف", "pause/resume"],
-    "إيقاف": ["pause", "stop", "إيقاف"],
-    "بوز": ["pause"],
     "الغاء": ["cancel", "الغاء", "dismiss"],
     "إلغاء": ["cancel", "إلغاء"],
     "موافق": ["ok", "yes", "confirm", "agree", "موافق", "apply"],
@@ -67,9 +114,6 @@ BILINGUAL_UI_SYNONYMS = {
     "قص": ["cut", "قص"],
     "تحديث": ["refresh", "reload", "update", "تحديث"],
     "ريفرش": ["refresh", "reload"],
-    "التالي": ["next", "forward", "التالي"],
-    "السابق": ["back", "previous", "السابق"],
-    "رجوع": ["back", "previous", "رجوع"],
     "تنزيل": ["download", "تنزيل"],
     "داونلود": ["download"],
     "تحميل": ["upload", "download", "تحميل"],
@@ -77,6 +121,11 @@ BILINGUAL_UI_SYNONYMS = {
     "لوجين": ["login", "sign in"],
     "خروج": ["logout", "sign out", "خروج"],
     "تسجيل خروج": ["logout", "sign out"],
+    "مفضلة": ["favorite", "like", "save"],
+    "لايك": ["like", "favorite"],
+    "تكرار": ["repeat"],
+    "عشوائي": ["shuffle"],
+    "شافل": ["shuffle"],
 }
 
 
@@ -113,19 +162,18 @@ class UIElement:
 
 
 class AccessibilityScanner:
-    """Windows UI Automation Accessibility Scanner."""
+    """Windows UI Automation Accessibility Scanner & Universal In-App Controller."""
 
     def __init__(self):
-        # Configure uiautomation settings
         auto.SetGlobalSearchTimeout(1.0)
 
+    @ensure_com_initialized
     def get_active_window(self) -> Optional[Any]:
         """Gets the top-level foreground active window control."""
         try:
             focused = auto.GetFocusedControl()
             if not focused:
                 return None
-            # Walk up to the top-level WindowControl
             current = focused
             while current:
                 if current.ControlType == auto.ControlType.WindowControl:
@@ -138,6 +186,7 @@ class AccessibilityScanner:
         except Exception:
             return None
 
+    @ensure_com_initialized
     def scan_active_window(
         self,
         max_elements: int = 50,
@@ -146,7 +195,7 @@ class AccessibilityScanner:
     ) -> Tuple[str, List[UIElement]]:
         """
         Scans the active window and returns its title and a list of interactive elements.
-        Runs locally in ~10-30ms.
+        Thread-safe and runs locally in ~10-30ms.
         """
         active_window = self.get_active_window()
         if not active_window:
@@ -156,7 +205,6 @@ class AccessibilityScanner:
         elements: List[UIElement] = []
         element_id = 1
 
-        # Check screen bounds to filter offscreen items
         screen_w, screen_h = pyautogui.size()
 
         def traverse(control: Any, depth: int):
@@ -173,14 +221,13 @@ class AccessibilityScanner:
                 width = right - left
                 height = bottom - top
 
-                # Filter out zero-sized or completely offscreen controls
+                # Filter zero-sized or completely offscreen controls
                 if width <= 2 or height <= 2 or right <= 0 or bottom <= 0 or left >= screen_w or top >= screen_h:
                     return
 
                 ctype = control.ControlType
                 ctype_name = INTERACTIVE_CONTROL_TYPES.get(ctype)
 
-                # If interactive_only is True, filter only meaningful controls
                 if interactive_only:
                     is_candidate = (ctype_name is not None) and (ctype != auto.ControlType.TextControl or len(control.Name or "") > 1)
                 else:
@@ -190,9 +237,7 @@ class AccessibilityScanner:
                 auto_id = (control.AutomationId or "").strip()
                 class_name = (control.ClassName or "").strip()
 
-                # If candidate has name or automation_id or is an edit/document control
                 if is_candidate and (name or auto_id or ctype in (auto.ControlType.EditControl, auto.ControlType.DocumentControl)):
-                    # Get value if available
                     val = None
                     try:
                         val_pat = control.GetValuePattern()
@@ -247,54 +292,68 @@ class AccessibilityScanner:
             lines.append(f"[{elem.id}] {elem.control_type}: '{elem.name}'{auto_id_str}{val_str} at ({elem.center_x}, {elem.center_y})")
         return "\n".join(lines)
 
+    def _normalize_text(self, text: str) -> str:
+        """Normalizes Arabic/English text for robust UI element matching."""
+        if not text:
+            return ""
+        t = text.lower().strip()
+        # Remove tashkeel / diacritics
+        t = re.sub(r'[\u064B-\u0652]', '', t)
+        # Normalize alefs, taa marbouta, yaa
+        t = re.sub(r'[أإآٱ]', 'ا', t)
+        t = t.replace('ة', 'ه').replace('ى', 'ي')
+        # Common phonetic variants
+        t = t.replace('الكلامات', 'الكلمات').replace('كلامات', 'كلمات')
+        t = t.replace('البعدها', 'بعدها').replace('القبلها', 'قبلها')
+        return t
+
     def find_best_match(self, query: str, elements: List[UIElement]) -> Optional[Tuple[UIElement, float]]:
         """
         Finds the most relevant UI element matching the user's voice query.
-        Uses bilingual dictionary expansion + substring + token overlap scoring.
-        Returns (UIElement, confidence_score [0.0 - 1.0]).
+        Uses bilingual dictionary expansion + normalization + substring + token overlap scoring.
         """
         if not elements or not query:
             return None
 
-        clean_query = query.lower().strip()
-        # Remove common Arabic prefixes/fillers ("على", "زر", "زرار", "خانة", "حقل", "كلمة", "اضغط", "انقر")
-        clean_query = re.sub(r"\b(على|زر|زرار|خانة|حقل|كلمة|اضغط|انقر|دوس|افتح|شغل|اكتب|في|من)\b", "", clean_query).strip()
+        clean_query = self._normalize_text(query)
+        # Remove command prefixes/fillers
+        clean_query = re.sub(r"\b(علي|على|زر|زرار|بتاع|خانه|خانة|حقل|كلمه|كلمة|اضغط|انقر|دوس|افتح|شغل|اكتب|في|من|show|click|press|button)\b", "", clean_query).strip()
 
-        # Build candidate search terms (original query + English synonyms if found)
         search_terms = {clean_query}
         for token in clean_query.split():
-            search_terms.add(token)
+            norm_token = self._normalize_text(token)
+            search_terms.add(norm_token)
             if token in BILINGUAL_UI_SYNONYMS:
-                search_terms.update(BILINGUAL_UI_SYNONYMS[token])
+                for syn in BILINGUAL_UI_SYNONYMS[token]:
+                    search_terms.add(self._normalize_text(syn))
+            if norm_token in BILINGUAL_UI_SYNONYMS:
+                for syn in BILINGUAL_UI_SYNONYMS[norm_token]:
+                    search_terms.add(self._normalize_text(syn))
 
         best_elem = None
         best_score = 0.0
 
         for elem in elements:
-            elem_name = (elem.name or "").lower()
-            elem_auto_id = (elem.automation_id or "").lower()
-            elem_full = f"{elem_name} {elem_auto_id}"
+            elem_name_norm = self._normalize_text(elem.name or "")
+            elem_auto_id_norm = self._normalize_text(elem.automation_id or "")
+            elem_full = f"{elem_name_norm} {elem_auto_id_norm}"
 
             score = 0.0
 
-            # 1. Exact match
             for term in search_terms:
-                if not term:
+                if not term or len(term) < 2:
                     continue
-                if term == elem_name:
+                if term == elem_name_norm:
                     score = max(score, 1.0)
-                elif term in elem_name:
-                    # Substring match (weighted by length ratio)
-                    score = max(score, 0.85 * (len(term) / max(len(elem_name), 1)))
-                elif term in elem_auto_id:
-                    score = max(score, 0.75)
+                elif term in elem_name_norm:
+                    score = max(score, 0.85 * (len(term) / max(len(elem_name_norm), 1)))
+                elif term in elem_auto_id_norm:
+                    score = max(score, 0.80)
                 else:
-                    # Token overlap
                     for sub in term.split():
                         if len(sub) > 1 and sub in elem_full:
-                            score = max(score, 0.6)
+                            score = max(score, 0.65)
 
-            # Prioritize actionable types over plain text
             if elem.control_type in ("Button", "MenuItem", "TabItem", "CheckBox", "Edit"):
                 score *= 1.1
 
@@ -302,29 +361,60 @@ class AccessibilityScanner:
                 best_score = score
                 best_elem = elem
 
-        if best_elem and best_score >= 0.4:
+        if best_elem and best_score >= 0.40:
             return best_elem, min(best_score, 1.0)
         return None
 
+    def find_search_field(self, elements: List[UIElement]) -> Optional[UIElement]:
+        """Universally locates the search or query input box in ANY active app."""
+        # 1. Look for explicit Search / Query / Find / Address in Edit controls
+        search_keywords = ["search", "بحث", "find", "filter", "query", "address", "url", "سيرش"]
+        for elem in elements:
+            if elem.control_type in ("Edit", "ComboBox"):
+                elem_text = f"{elem.name} {elem.automation_id}".lower()
+                if any(k in elem_text for k in search_keywords):
+                    return elem
+
+        # 2. Fallback: First Edit or Document control in the upper half of the window
+        for elem in elements:
+            if elem.control_type in ("Edit", "Document") and elem.center_y < 400:
+                return elem
+
+        return None
+
+    def find_play_or_action_button(self, elements: List[UIElement]) -> Optional[UIElement]:
+        """Universally finds a Play, Open, or primary action button in search results."""
+        action_keywords = ["play", "تشغيل", "شغل", "start", "open", "فتح", "view"]
+        for elem in elements:
+            if elem.control_type in ("Button", "MenuItem", "ListItem", "Hyperlink"):
+                elem_text = f"{elem.name} {elem.automation_id}".lower()
+                if any(k in elem_text for k in action_keywords):
+                    return elem
+
+        # Fallback: First ListItem or first Button in content area
+        for elem in elements:
+            if elem.control_type in ("ListItem", "Button") and elem.center_y > 150:
+                return elem
+
+        return None
+
+    @ensure_com_initialized
     def click_element(self, element: UIElement) -> bool:
         """
         Clicks an element using native UI Automation Invoke/Toggle pattern,
         or falls back to physical mouse click on its center coordinates.
         """
-        # Strategy 1: Programmatic Invoke (Instant, no mouse movement required)
+        # Strategy 1: Programmatic Invoke
         try:
             if element.raw_control:
-                # Button / MenuItem
                 inv_pat = element.raw_control.GetInvokePattern()
                 if inv_pat:
                     inv_pat.Invoke()
                     return True
-                # CheckBox / Radio
                 tog_pat = element.raw_control.GetTogglePattern()
                 if tog_pat:
                     tog_pat.Toggle()
                     return True
-                # Tab / List
                 sel_pat = element.raw_control.GetSelectionItemPattern()
                 if sel_pat:
                     sel_pat.Select()
@@ -332,7 +422,7 @@ class AccessibilityScanner:
         except Exception:
             pass
 
-        # Strategy 2: Fallback to physical coordinate click
+        # Strategy 2: Fallback to coordinate click
         try:
             pyautogui.moveTo(element.center_x, element.center_y, duration=0.15)
             pyautogui.click()
@@ -341,23 +431,13 @@ class AccessibilityScanner:
             print(f"[AccessibilityScanner] Click failed: {e}")
             return False
 
-    def type_into_element(self, element: UIElement, text: str, clear_first: bool = False) -> bool:
+    @ensure_com_initialized
+    def type_into_element(self, element: UIElement, text: str, clear_first: bool = True) -> bool:
         """
         Types text into an Edit/Document/Input element.
         Uses native ValuePattern or focuses and uses safe Unicode clipboard typing.
         """
-        # Strategy 1: Programmatic SetValue
-        if not clear_first:
-            try:
-                if element.raw_control:
-                    val_pat = element.raw_control.GetValuePattern()
-                    if val_pat:
-                        val_pat.SetValue(text)
-                        return True
-            except Exception:
-                pass
-
-        # Strategy 2: Focus & Unicode paste
+        # Focus & Unicode paste
         try:
             pyautogui.click(element.center_x, element.center_y)
             time.sleep(0.1)
@@ -367,13 +447,50 @@ class AccessibilityScanner:
                 pyautogui.press("backspace")
                 time.sleep(0.05)
 
-            # Paste Unicode text safely
             pyperclip.copy(text)
             pyautogui.hotkey("ctrl", "v")
             return True
         except Exception as e:
             print(f"[AccessibilityScanner] Type failed: {e}")
             return False
+
+    def universal_in_app_search(self, query: str, auto_play: bool = False) -> Tuple[bool, str]:
+        """
+        UNIVERSAL In-App Search & Execution across ANY active desktop app
+        (Spotify, Chrome, VS Code, Explorer, Settings, Discord, etc.)
+        without requiring application-specific controllers!
+        """
+        window_title, elements = self.scan_active_window(max_elements=40)
+        search_box = self.find_search_field(elements)
+
+        if search_box:
+            # Type query into the search box
+            self.type_into_element(search_box, query, clear_first=True)
+            time.sleep(0.1)
+            pyautogui.press("enter")
+        else:
+            # Universal keyboard shortcut to search in active app: Ctrl+L or Ctrl+F
+            pyautogui.hotkey("ctrl", "l")
+            time.sleep(0.1)
+            pyperclip.copy(query)
+            pyautogui.hotkey("ctrl", "v")
+            pyautogui.press("enter")
+
+        if auto_play:
+            time.sleep(0.8)
+            # Re-scan refreshed window to find the result or play button
+            refreshed_title, refreshed_elements = self.scan_active_window(max_elements=30)
+            play_btn = self.find_play_or_action_button(refreshed_elements)
+            if play_btn:
+                self.click_element(play_btn)
+            else:
+                # Universal fallback: Tab into first result and press Enter
+                pyautogui.press("tab")
+                time.sleep(0.1)
+                pyautogui.press("enter")
+
+        act_str = " and triggered playback on top result" if auto_play else ""
+        return True, f"Searched for '{query}' inside '{window_title}'{act_str} successfully."
 
 
 # Singleton instance for easy import

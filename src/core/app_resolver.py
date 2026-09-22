@@ -225,35 +225,35 @@ class WindowsAppResolver:
         # 1. فحص القاموس المعرب
         target_name = self.arabic_alias_map.get(q, q)
 
-        # 2. فحص البروتوكولات المباشرة
+        # 2. Check direct protocols
         if target_name in self.direct_targets:
             cmd = self.direct_targets[target_name]
             try:
                 subprocess.Popen(f'start "" "{cmd}"', shell=True)
-                return True, f"تم تشغيل {q} فوراً."
+                return True, f"Launched {q} instantly."
             except Exception:
                 pass
 
-        # 3. فحص البرامج المفهرسة في الويندوز و Program Files
+        # 3. Check indexed apps in Windows and Program Files
         for name, path in self.apps.items():
             if target_name == name or target_name in name or name in target_name:
                 try:
                     os.startfile(path)
-                    return True, f"تم فتح {name} بنجاح."
+                    return True, f"Opened {name} successfully."
                 except Exception:
                     pass
 
-        # 4. تحويل الاسم العربي إلى صوتيات لاتينية ومطابقة البرامج
+        # 4. Phonetic Latin matching
         phonetic_latin = self._arabic_to_latin_phonetic(q)
         for name, path in self.apps.items():
             if phonetic_latin in name or name in phonetic_latin:
                 try:
                     os.startfile(path)
-                    return True, f"تم فتح {name}."
+                    return True, f"Opened {name}."
                 except Exception:
                     pass
 
-        # 5. مطابقة التقارب (Fuzzy Matching)
+        # 5. Fuzzy Matching
         matches = difflib.get_close_matches(target_name, self.apps.keys(), n=1, cutoff=0.35)
         if not matches:
             matches = difflib.get_close_matches(phonetic_latin, self.apps.keys(), n=1, cutoff=0.35)
@@ -262,16 +262,16 @@ class WindowsAppResolver:
             best_match = matches[0]
             try:
                 os.startfile(self.apps[best_match])
-                return True, f"تم فتح {best_match}."
+                return True, f"Opened {best_match}."
             except Exception:
                 pass
 
-        # 6. إذا كان الاسم بالإنجليزية فقط ومكتوب بحروف ASCII، نجرب تشغيله كأمر
+        # 6. ASCII command fallback
         if target_name.isascii() and not any(ord(c) > 127 for c in target_name):
             try:
                 subprocess.Popen(f'start "" "{target_name}"', shell=True)
-                return True, f"تم تشغيل {target_name}."
+                return True, f"Executed command '{target_name}'."
             except Exception:
                 pass
 
-        return False, f"لم يتم العثور على برنامج باسم '{query}'."
+        return False, f"Could not find application '{query}'."

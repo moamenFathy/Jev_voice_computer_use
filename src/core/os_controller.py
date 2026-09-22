@@ -73,11 +73,35 @@ class OSController:
             pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.1)
         except Exception as e:
-            print(f"⚠️ خطأ أثناء الكتابة: {e}")
+            print(f"⚠️ Typing Error: {e}")
 
     def press_key(self, key_name: str):
         if self.stop_requested:
             return
+        
+        k = key_name.lower().strip()
+        # Direct Win32 Multimedia Hardware Virtual Key Codes
+        win32_media_keys = {
+            "nexttrack": 0xB0,      # VK_MEDIA_NEXT_TRACK
+            "prevtrack": 0xB1,      # VK_MEDIA_PREV_TRACK
+            "stop": 0xB2,           # VK_MEDIA_STOP
+            "playpause": 0xB3,      # VK_MEDIA_PLAY_PAUSE
+            "volumemute": 0xAD,     # VK_VOLUME_MUTE
+            "volumedown": 0xAE,     # VK_VOLUME_DOWN
+            "volumeup": 0xAF,       # VK_VOLUME_UP
+        }
+
+        if k in win32_media_keys:
+            try:
+                import ctypes
+                vk = win32_media_keys[k]
+                ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.04)
+                ctypes.windll.user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
+                return
+            except Exception:
+                pass
+
         key_map = {
             "enter": "enter", "return": "enter", "win": "win", "windows": "win",
             "esc": "escape", "escape": "escape", "backspace": "backspace",
@@ -86,7 +110,7 @@ class OSController:
             "volumeup": "volumeup", "volumedown": "volumedown", "volumemute": "volumemute",
             "playpause": "playpause", "nexttrack": "nexttrack", "prevtrack": "prevtrack"
         }
-        actual_key = key_map.get(key_name.lower(), key_name.lower())
+        actual_key = key_map.get(k, k)
         pyautogui.press(actual_key)
 
     def hotkey(self, keys: list[str]):
@@ -113,4 +137,4 @@ class OSController:
 
     def emergency_stop(self):
         self.stop_requested = True
-        print("🛑 تم تفعيل إيقاف الطوارئ!")
+        print("🛑 Emergency Stop Activated!")
