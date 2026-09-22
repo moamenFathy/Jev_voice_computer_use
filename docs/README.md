@@ -9,11 +9,12 @@ Welcome to the comprehensive architecture and developer documentation for **Jev 
 | Document | Description |
 | :--- | :--- |
 | [**1. System Architecture**](ARCHITECTURE.md) | High-level system design, data & action lifecycle, layered hierarchy, and thread safety. |
-| [**2. Jev Decision Engine & Planning**](JEV_DECISION_ENGINE.md) | TypeSafe AI System One integration, state context payloads, decision schemas, and compound multi-step goal decomposition. |
-| [**3. Windows UI Automation & Accessibility**](ACCESSIBILITY_AND_UI_AUTOMATION.md) | Universal in-app inspection, bilingual control matching, COM apartment management, and control dispatch. |
-| [**4. Voice & Speech Pipeline**](VOICE_AND_AUDIO.md) | Dual-language speech recognition (`ar-EG` & `en-US`), edge-TTS neural voice synthesis, and audio visualizer. |
-| [**5. Developer & Setup Guide**](DEVELOPER_GUIDE.md) | Installation, environment configuration, running tests, coding rules, and adding new capabilities. |
-| [**6. Product Roadmap & Future Architecture**](ROADMAP.md) | Upcoming features including Universal Web Navigator (Autonomous Result Clicker), Vision Grounding, and Offline Support. |
+| [**2. Command Taxonomy & Voice Grammar**](COMMAND_TAXONOMY.md) | Official 5-category voice command reference, Egyptian Arabic triggers, and multi-step patterns. |
+| [**3. Jev Decision Engine & Planning**](JEV_DECISION_ENGINE.md) | TypeSafe AI System One integration, state context payloads, decision schemas, and compound multi-step goal decomposition. |
+| [**4. Windows UI Automation & Accessibility**](ACCESSIBILITY_AND_UI_AUTOMATION.md) | Universal in-app inspection, bilingual control matching, COM apartment management, and control dispatch. |
+| [**5. Voice & Speech Pipeline**](VOICE_AND_AUDIO.md) | Dual-language speech recognition (`ar-EG` & `en-US`), edge-TTS neural voice synthesis, and audio visualizer. |
+| [**6. Developer & Setup Guide**](DEVELOPER_GUIDE.md) | Installation, environment configuration, running tests, coding rules, and adding new capabilities. |
+| [**7. Product Roadmap & Future Architecture**](ROADMAP.md) | Upcoming features including Universal Web Navigator (Autonomous Result Clicker), Vision Grounding, and Offline Support. |
 
 ---
 

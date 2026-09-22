@@ -89,6 +89,49 @@ graph TD
 
 ---
 
+---
+
+## 🛡️ Reliability Architecture (Phase 1)
+
+Phase 1 incorporates an execution-verification-retry architecture based on the core axiom:
+
+> **Execution != Goal Achievement** (A tool call completing without an exception is not proof of success).
+
+```mermaid
+flowchart TD
+    UserGoal["User Goal"] --> Decompose["Step Decomposition"]
+    Decompose --> Step["Current Sub-step"]
+    Step --> Decision["Jev Decision"]
+    Decision --> Tool["Tool Execution"]
+    Tool --> ExecCheck{"Tool Successful?"}
+
+    ExecCheck -->|No| FailReason["Classify FailureReason"]
+    FailReason --> Retryable{"Retryable & Attempts Left?"}
+    Retryable -->|Yes| WaitReObserve["Wait & Re-observe UI Tree"]
+    WaitReObserve --> Tool
+    Retryable -->|No| StepFail["Step Failed -> Abort Goal"]
+
+    ExecCheck -->|Yes| Observe["Capture Observation"]
+    Observe --> Verify["Run Verifier"]
+    Verify --> VerCheck{"Verification Passed?"}
+    
+    VerCheck -->|No| Retryable
+    VerCheck -->|Yes| NextStep["ToolResult(success=True) -> Next Step"]
+
+    StepFail --> GoalFail["GoalResult(success=False)"]
+    NextStep --> AllDone{"All Steps Done?"}
+    AllDone -->|Yes| GoalPass["GoalResult(success=True)"]
+```
+
+### Core Reliability Components:
+1. **`ToolResult` (`src/core/tool_result.py`)**: Structured outcome for every tool call with `success`, `failure_reason`, `retryable`, and `evidence`.
+2. **`Observation` (`src/core/observation.py`)**: Environmental state captured after execution from UIA trees, window titles, or clipboard buffers.
+3. **`Verifier` (`src/verification/verifier.py`)**: Domain validators including `AppLaunchVerifier`, `TextVerifier`, `UIElementVerifier`, and `SearchVerifier`.
+4. **`AgentRuntime` (`src/runtime/agent_runtime.py`)**: Bounded retry loop (`MAX_RETRIES = 2`, `RETRY_DELAY = 0.5s`) with live reliability metrics (`goal_success_rate`, `retries_attempted`, `verification_failures`).
+5. **`GoalResult` (`src/core/goal_result.py`)**: Aggregated multi-step outcome enforcing strict failure propagation across sequential sub-steps.
+
+---
+
 ## 🧵 Threading & COM Apartment Model
 
 ```
@@ -110,3 +153,4 @@ graph TD
 ```
 
 Without `auto.UIAutomationInitializerInThread()`, calling `uiautomation` inside a non-main Python thread triggers `[WinError -2147221008] CoInitialize has not been called`. The `@ensure_com_initialized` decorator guarantees safe execution across all entrypoints.
+
